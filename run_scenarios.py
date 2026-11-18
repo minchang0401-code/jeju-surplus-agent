@@ -55,10 +55,37 @@ ROUTING_TESTS = [
     ("충전을 하면 돈이 아껴져?", "explain_benefits"),
     ("전기차 충전하면 언제가 좋아?", "recommend_actions"),
     ("하귀리에서 충전하려는데", "find_chargers"),
+    ("잉여전력은 어떻게 생겨?", "explain_surplus"),
+    ("빨래를 아끼려면 어떻게 해야 해?", "how_to_act"),
+    ("노형동에서 몇 시에 충전하면 좋아?", "recommend_actions"),
     ("오늘 점심 뭐 먹지?", "(답할 수 없음)"),
     ("내가 말한 질문에 다른 답을 하는데?", "(답할 수 없음)"),
     ("제주 맛집 추천해줘", "(답할 수 없음)"),
 ]
+
+
+# (앞 질문, 이어지는 질문, 기대 도구) — 대화 흐름을 이어 받는지 확인
+FOLLOWUP_TESTS = [
+    ("잉여전력이 생기는 시간에 충전을 하면 어떤 점이 좋아?", "그렇게 하려면 어떻게 해야해?", "how_to_act"),
+    ("잉여전력이 생기는 시간에 충전을 하면 어떤 점이 좋아?", "그럼 언제 하면 돼?", "recommend_actions"),
+    ("노형동 충전소 알려줘", "그럼 거기는 몇 시가 좋아?", "recommend_actions"),
+    ("내일 빨래 언제 돌려?", "그럼 그거 어떻게 하면 돼?", "how_to_act"),
+    ("잉여전력이 생기는 시간에 충전을 하면 어떤 점이 좋아?", "그럼 맛집은?", "(답할 수 없음)"),
+]
+
+
+def followup_check() -> list[str]:
+    from agent import _route, _with_context
+    lines, ok = [f"## 이어지는 질문 이해 시험 ({len(FOLLOWUP_TESTS)}개)", "", "| 앞 질문 | 이어지는 질문 | 기대 도구 | 고른 도구 | 결과 |", "|---|---|---|---|---|"], 0
+    for prev, q, expected in FOLLOWUP_TESTS:
+        routed, _ = _with_context(q, [prev])
+        tools = [name for name, _ in _route(routed)] or ["(답할 수 없음)"]
+        hit = expected in tools
+        ok += hit
+        lines.append(f"| {prev} | {q} | {expected} | {', '.join(tools)} | {'통과' if hit else '실패'} |")
+    lines.insert(1, f"\n통과 {ok}/{len(FOLLOWUP_TESTS)}\n")
+    print(f"이어지는 질문 이해 {ok}/{len(FOLLOWUP_TESTS)}")
+    return lines
 
 
 def routing_check() -> list[str]:
@@ -90,7 +117,7 @@ def main() -> None:
             lines.append(f"- 데이터 부족 안내: {errors}")
         lines += ["", "```", res["answer"], "```", ""]
     lines.insert(1, f"\n통과 {passed}/{len(SCENARIOS)}\n")
-    lines += [""] + routing_check()
+    lines += [""] + routing_check() + [""] + followup_check()
     REPORTS.mkdir(exist_ok=True)
     out = REPORTS / "scenario_results.md"
     out.write_text("\n".join(lines), encoding="utf-8")

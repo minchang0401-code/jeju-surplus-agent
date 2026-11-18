@@ -58,7 +58,7 @@ if quick[2].button("왜 생기는 거야?", use_container_width=True):
 question = st.chat_input("궁금한 것을 물어보세요 (예: 토요일에 노형동에서 충전하려는데?)") or preset
 if question:
     with st.spinner("데이터를 확인하고 있어요..."):
-        res = ask(question)
+        res = ask(question, [q for q, _ in st.session_state.history])   # 앞 질문을 함께 넘겨 이어지는 질문을 이해
     st.session_state.history.append((question, res))
 
 for q, res in st.session_state.history:

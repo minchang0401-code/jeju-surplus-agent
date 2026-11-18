@@ -170,6 +170,13 @@ def _route(question: str) -> list[tuple[str, dict]]:
     has = lambda *ks: any(k in q for k in ks)
     if has("맞았", "맞혔", "틀렸", "검증", "적중", "정확했", "정확해", "지난예보", "지난주예보", "저번주예보", "지난달예보"):
         return [("check_past_forecast", {})]
+    if has("어떻게해", "어떻게하", "방법", "뭘해야", "뭐부터", "어떡해") and not has("출력제어", "smp", "생겨", "생기", "만들어"):
+        target = "전기차" if has("전기차", "충전", "ev") else "가전"
+        steps = [("recommend_actions", {"target": target, "day": day}), ("how_to_act", {"target": target})]
+        area = _guess_area(question) if target == "전기차" else ""
+        if area:
+            steps.append(("find_chargers", {"area": area, "quick_only": "급속" in q}))
+        return steps
     when = has("언제", "몇시", "이번주", "다음주", "내일", "모레", "오늘", "주말", "요일", "며칠")
     # '언제 써야 싸게 쓸까?'처럼 시간을 묻는 질문은 이득 설명이 아니라 시간 추천으로 보냄
     if has("이득", "혜택", "좋은점", "장점", "왜써", "도움이돼", "뭐가좋", "뭐가이득", "어떤게좋", "어떤점이좋",
@@ -179,15 +186,15 @@ def _route(question: str) -> list[tuple[str, dict]]:
         if when and has("전기차", "충전", "ev"):   # '이번 주에 충전하면 뭐가 좋아?' → 이번 주 좋은 시간 + 이득
             steps.insert(0, ("recommend_actions", {"target": "전기차", "day": day}))
         return steps
-    if has("왜", "이유", "원인", "출력제어", "smp", "무슨뜻") or (has("뭐야", "뭔가요", "뭐예요") and has("잉여", "전기", "smp", "출력")):
+    if has("왜", "이유", "원인", "출력제어", "smp", "무슨뜻", "어떻게생", "왜생", "생기는이유") or (has("뭐야", "뭔가요", "뭐예요") and has("잉여", "전기", "smp", "출력")):
         return [("explain_surplus", {})]
-    if has("습관", "몇시에충전", "보통충전", "도민들은", "다른사람", "많이충전"):
+    if has("습관", "보통충전", "보통몇시", "다들", "도민들은", "다른사람", "많이충전"):
         return [("ev_charging_habits", {})]
     if has("전기차", "충전", "ev"):
         area = _guess_area(question)
         if area or has("충전소", "충전기", "어디", "근처", "가까운"):
             steps = [("find_chargers", {"area": area, "quick_only": "급속" in q})]
-            if day or has("하려", "할건데", "하려는데", "언제"):   # '토요일에 노형동에서 충전하려는데' → 시간 + 장소
+            if day or has("하려", "할건데", "하려는데", "언제", "몇시"):   # '토요일에 노형동에서 충전하려는데' → 시간 + 장소
                 steps.insert(0, ("recommend_actions", {"target": "전기차", "day": day}))
             return steps
         return [("recommend_actions", {"target": "전기차", "day": day})]
@@ -226,6 +233,8 @@ def _template(name: str, r: dict) -> str:
         lines.append("- 모두에게: " + r["public"])
         lines.append("- 앞으로: " + r["future"])
         return "\n".join(lines)
+    if name == "how_to_act":
+        return "- 이렇게 해 보세요:\n" + "\n".join(f"  {i}. {t}" for i, t in enumerate(r["steps"], 1))
     if name == "find_chargers":
         if r.get("error"):
             return f"- {r['error']}"
@@ -296,8 +305,41 @@ def _template(name: str, r: dict) -> str:
     return json.dumps(r, ensure_ascii=False, default=str)[:800]
 
 
-def _fallback(question: str, trace: list) -> str:
-    steps = _route(question)
+# 앞 질문을 가리키는 말 ('그렇게 하려면 어떻게 해?', '그럼 언제?')
+_FOLLOWUP = ("그렇게", "그럼", "그러면", "그거", "그건", "그걸", "그것", "그때", "거기", "이거", "이렇게", "그래서")
+_TOPIC = ("전기차", "충전", "ev") + APPLIANCE_WORDS
+_ASK_WORDS = ("어떻게", "방법", "언제", "몇시", "어디", "근처", "가까운", "급속", "왜", "좋아", "좋을", "이득",
+              "요일", "내일", "모레", "오늘", "주말", "이번주", "다음주", "뭘해", "어떡")
+
+
+def _with_context(question: str, history: list[str] | None) -> tuple[str, str]:
+    """앞 질문에 기대는 짧은 질문이면 앞 질문의 주제(충전·빨래 등)를 붙여서 이해함.
+    반환: (도구 고르기에 쓸 질문, 이어 받은 앞 질문 — 없으면 '')"""
+    if not history:
+        return question, ""
+    q = question.replace(" ", "").lower()
+    if any(t in q for t in _TOPIC):
+        return question, ""
+    if not (any(w in q for w in _FOLLOWUP) or (not _route(question) and len(q) <= 15)):
+        return question, ""
+    # '그럼 맛집은?'처럼 앞 주제와 관계없는 질문까지 끌어오지 않도록, 묻는 말(언제·어디·어떻게 …)이 있을 때만 이어 받음
+    if not any(w in q for w in _ASK_WORDS):
+        return question, ""
+    for prev in reversed(history):
+        p = prev.replace(" ", "").lower()
+        hit = [t for t in _TOPIC if t in p]
+        if hit:
+            topic = "전기차 충전" if hit[0] in ("전기차", "충전", "ev") else hit[0]
+            area = _guess_area(prev)
+            return f"{area} {topic} {question}".strip(), prev
+    return question, ""
+
+
+def _fallback(question: str, trace: list, history: list[str] | None = None) -> str:
+    routed, prev = _with_context(question, history)
+    steps = _route(routed)
+    if prev and steps:
+        trace.append({"tool": "context", "args": {"앞 질문": prev}, "result": {"note": f"앞 질문에 이어서 이해: {routed}"}})
     if not steps:
         trace.append({"tool": "none", "args": {}, "result": {"note": "지원하지 않는 질문"}})
         return UNKNOWN_ANSWER
@@ -315,22 +357,26 @@ def _fallback(question: str, trace: list) -> str:
         seen.add(key)
         lines.append(line)
     parts = ["\n".join(lines)]
+    if prev:
+        parts.insert(0, f"(앞 질문 '{prev}'에 이어서 답할게요)")
     sources = sorted({s for t in trace for s in t["result"].get("sources", []) if isinstance(s, str)})
     return "\n".join(parts) + (f"\n\n출처: {', '.join(sources)}" if sources else "")
 
 
 # ---------------------------------------------------------------- 공개 함수
-def ask(question: str) -> dict:
-    """반환: {'answer': 답변, 'trace': 부른 도구와 결과, 'mode': 'llm' 또는 'fallback'}"""
+def ask(question: str, history: list[str] | None = None) -> dict:
+    """history: 같은 대화에서 앞서 한 질문들(오래된 것부터). '그렇게 하려면?' 같은 이어지는 질문을 이해하는 데 씀.
+    반환: {'answer': 답변, 'trace': 부른 도구와 결과, 'mode': 'llm' 또는 'fallback'}"""
     trace: list = []
     cfg = _llm_config()
     if cfg:
         try:
             fn = _chat_anthropic if cfg["provider"] == "anthropic" else _chat_openai
-            return {"answer": fn(cfg, question, trace), "trace": trace, "mode": "llm"}
+            q = question if not history else "(앞서 한 질문: " + " / ".join(history[-3:]) + ")\n" + question
+            return {"answer": fn(cfg, q, trace), "trace": trace, "mode": "llm"}
         except Exception as e:
             trace.append({"tool": "llm_error", "args": {}, "result": {"error": str(e)}})
-    return {"answer": _fallback(question, trace), "trace": trace, "mode": "fallback"}
+    return {"answer": _fallback(question, trace, history), "trace": trace, "mode": "fallback"}
 
 
 if __name__ == "__main__":

@@ -388,8 +388,27 @@ def explain_benefits() -> dict:
     return out
 
 
+def how_to_act(target: str = "전기차") -> dict:
+    """'그렇게 하려면 어떻게 해야 해?'에 대한 실천 방법. 사실은 FACTS·허브 데이터에 있는 것만 씀."""
+    ev = target == "전기차"
+    steps = [
+        "위에 나온 '잉여 가능성이 높은 날·시간'에 " + ("충전을 시작하세요. 제주는 주로 낮 시간에 전기가 남아요."
+                                             if ev else "세탁기·식기세척기·건조기처럼 시간을 옮길 수 있는 가전을 돌리세요."),
+        ("차나 충전기에 예약 충전 기능이 있으면 시작 시간을 그 시간으로 맞춰 두세요."
+         if ev else "가전에 예약(타이머) 기능이 있으면 그 시간에 돌아가도록 맞춰 두세요."),
+    ]
+    if ev:
+        steps.append("충전소는 '노형동 근처 충전소', '애월 급속 충전기'처럼 동네 이름으로 물어보면 가까운 곳을 찾아 드려요.")
+    steps.append("저녁 4~10시는 가능하면 피하세요. 제주 계시별 요금의 최대부하 시간이고, 남는 전기도 거의 없는 시간이에요.")
+    steps.append("집에서 쓰는 전기 요금까지 줄이고 싶다면: 일반(누진제) 요금은 쓰는 시간을 옮겨도 요금이 그대로예요. "
+                 "주택용 계시별 선택요금제가 우리 집에 유리한지, 가입 조건은 무엇인지 한전(국번 없이 123, 한전:ON)에 먼저 문의하세요.")
+    return {"target": target, "steps": steps,
+            "sources": [FACTS["jeju_tou_tariff"]["source"], "한전:ON(online.kepco.co.kr) 고객 상담 창구"]}
+
+
 TOOLS = {
     "explain_benefits": explain_benefits,
+    "how_to_act": how_to_act,
     "forecast_surplus": forecast_surplus,
     "recommend_actions": recommend_actions,
     "find_chargers": find_chargers,
@@ -423,6 +442,9 @@ TOOL_SPECS = [
          "start": {"type": "string", "description": "YYYY-MM-DD"}, "end": {"type": "string", "description": "YYYY-MM-DD"}}}},
     {"name": "explain_benefits", "description": "이 서비스를 쓰면 도민이 얻는 이득(지금 바로/조건부/앞으로)과 얻지 못하는 것을 솔직하게 정리한다.",
      "parameters": {"type": "object", "properties": {}}},
+    {"name": "how_to_act", "description": "잉여 시간에 맞춰 전기를 쓰려면 실제로 무엇을 하면 되는지(예약 기능, 피할 시간, 요금제 문의) 단계별로 알려 준다.",
+     "parameters": {"type": "object", "properties": {
+         "target": {"type": "string", "enum": ["가전", "전기차"], "default": "전기차"}}}},
     {"name": "data_status", "description": "어떤 데이터가 준비됐는지, 실시간 예보가 연결됐는지 확인한다.",
      "parameters": {"type": "object", "properties": {}}},
 ]
