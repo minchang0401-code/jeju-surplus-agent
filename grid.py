@@ -95,8 +95,10 @@ def grid_stats() -> dict:
         "midday_demand_mw": {"잉여 있는 날": round(float(g.loc[1, "demand"])), "다른 날": round(float(g.loc[0, "demand"]))},
         "midday_hvdc_import_mw": {"잉여 있는 날": round(float(g.loc[1, "hvdc"])), "다른 날": round(float(g.loc[0, "hvdc"]))},
         "reverse_hours": int(len(rev)),
-        "reverse_hours_in_surplus": int(rev["is_surplus"].sum()),
-        "note": "낮 11시~오후 2시 평균. 연계선 값이 음수면 제주에서 육지로 전기를 보낸(역송) 시간.",
+        "reverse_hours_with_price_le_0": int(rev["is_surplus"].sum()),
+        "note": "수요·연계선은 낮 11시~오후 2시 평균. 연계선 값이 음수면 제주에서 육지로 전기를 보낸(역송) 시간. "
+                "reverse_hours_with_price_le_0 = 역송한 시간 중 제주 전력시장 가격(SMP)이 0원 이하였던 시간 "
+                "(역송했지만 가격은 0원보다 높았던 시간이 더 많음 → SMP 0원 이하는 확실히 남는 시간만 잡는 신호).",
     }
     # ③ 플러스 DR (남는 시간에 전기를 더 쓰면 보상) 실적
     p = _read("jeju_plus_dr_2021_2023.csv")

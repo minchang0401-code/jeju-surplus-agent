@@ -205,6 +205,10 @@ def find_chargers(area: str = "", quick_only: bool = False, limit: int = 5, radi
                                         has_quick=("is_quick", "max"), parking_fee=("fee", "max"),
                                         hours=("startTime", "first"), operators=("provider", "nunique")).reset_index()
     how = "전체"
+    area = (area or "").strip()
+    # '노형동'·'애월읍'·'하귀리'처럼 끝에 동·읍·면·리가 붙어도 대표 좌표가 있으면 반경으로 찾음
+    if area not in PLACE_COORDS and len(area) >= 3 and area[-1] in "동읍면리" and area[:-1] in PLACE_COORDS:
+        area = area[:-1]
     if area in PLACE_COORDS:
         lat, lon = PLACE_COORDS[area]
         g["distance_km"] = _km(lat, lon, g["lat"], g["lon"]).round(2)
@@ -214,8 +218,14 @@ def find_chargers(area: str = "", quick_only: bool = False, limit: int = 5, radi
         g = g[g["distance_km"] <= rad].sort_values(["distance_km"])
         how = f"{area} 중심 반경 {rad:g}km"
     elif area:
-        g = g[g["chargingPlace"].astype(str).str.contains(area, na=False)]
-        how = f"이름에 '{area}' 포함"
+        hit = g[g["chargingPlace"].astype(str).str.contains(area, na=False, regex=False)]
+        if hit.empty and len(area) >= 3 and area[-1] in "동읍면리":   # '하귀리' → '하귀'로 다시 찾기
+            hit = g[g["chargingPlace"].astype(str).str.contains(area[:-1], na=False, regex=False)]
+            area_txt = area[:-1]
+        else:
+            area_txt = area
+        g = hit
+        how = f"이름에 '{area_txt}' 포함"
     if quick_only:
         g = g[g["has_quick"]]
     if area in PLACE_COORDS:
@@ -225,7 +235,7 @@ def find_chargers(area: str = "", quick_only: bool = False, limit: int = 5, radi
     for _, r in g.head(limit).iterrows():
         name = str(r["chargingPlace"])
         item = {"name": name, "quick_count": int(r["quick"]), "slow_count": int(r["slow"]),
-                "has_quick": bool(r["has_quick"]), "parking_fee": bool(r["parking_fee"]),
+                "has_quick": bool(r["has_quick"]),   # 주차요금(parkingFeeFlag)은 값의 뜻이 문서로 확인되지 않아 넣지 않음
                 "lat": round(float(r["lat"]), 5), "lon": round(float(r["lon"]), 5)}
         if "distance_km" in r:
             item["distance_km"] = float(r["distance_km"])
