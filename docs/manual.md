@@ -7,7 +7,7 @@ GPU는 쓰지 않습니다(학습·예측 모두 CPU, 1분 이내).
 | 항목 | 내용 |
 |---|---|
 | 운영체제 | Windows 10/11, macOS, Linux 모두 가능 |
-| Python | 3.10 이상 (개발: 3.13) |
+| Python | 3.11 이상, **3.12 권장** (시험: 3.12·3.13·3.14) — 라이브러리 버전 범위는 `requirements.txt`, 실제 시험한 버전은 `requirements-tested.txt` |
 | 주요 패키지 | pandas, numpy, scikit-learn, joblib, requests, streamlit (`requirements.txt`) |
 | 인터넷 | 데이터 수집·예보·LLM에 필요. 없으면 '저장 데이터 모드'로 동작 |
 | GPU | 필요 없음 |
