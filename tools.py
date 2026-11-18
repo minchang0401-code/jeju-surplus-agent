@@ -577,6 +577,13 @@ def plan_appliance_use(appliance: str = "", day: str = "", start_hour: int | Non
                                 "avg_prob": round(sum(p) / len(p), 3), "level": level_of(sum(p) / len(p)),
                                 "basis": "기상청 단기예보 반영" if full else "날씨 미반영(과거 패턴) 참고치"})
         out["alternatives"] = top3(alt)
+    # 원한 때보다 확실히 나은 때가 있으면 따로 담아 둠 (LLM 이 빠뜨리지 않도록)
+    ref = out.get("requested_window_best") or (out["best_windows"][0] if out["best_windows"] else None)
+    pool = out.get("alternatives") or out["best_windows"]
+    if pool:
+        top = max(pool, key=lambda c: c["avg_prob"])
+        if ref is None or top["avg_prob"] >= ref["avg_prob"] + 0.05:
+            out["better_option"] = {**top, "note": "원하신 때보다 남는 전기 가능성이 더 높은 때 — 답에 꼭 함께 알려 줄 것"}
     if start_hour is not None or end_hour is not None or day:
         req = [c for c in cands if c["in_requested"]]
         if req:
