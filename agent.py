@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from datetime import date, timedelta
 
@@ -137,15 +138,28 @@ def _guess_day(question: str) -> str:
     return ""
 
 
+# 동네 이름 뒤에 붙는 조사 (예: '하귀리에서' → '하귀리')
+_PARTICLES = ("에서", "으로", "근처", "주변", "쪽", "에", "로", "의", "은", "는", "이", "가", "을", "를")
+# '동'·'리'로 끝나지만 동네 이름이 아닌 흔한 낱말
+_NOT_PLACES = {"자동", "이동", "활동", "행동", "작동", "변동", "가동", "운동", "재가동",
+               "우리", "거리", "자리", "소리", "빨리", "멀리", "요리", "정리", "처리", "관리", "무리"}
+
+
 def _guess_area(question: str) -> str:
+    """질문에서 동네 이름을 찾음. 목록에 없는 곳은 '○○동/○○리'(3글자 이상)만 동네로 봄.
+    '면'·'읍'으로 끝나는 낱말은 보지 않음 → '충전을 하면'의 '하면'을 동네로 착각하지 않도록.
+    (제주의 읍·면 이름은 모두 JEJU_PLACES 에 들어 있음)"""
     q = question.replace(" ", "")
     for place in sorted(JEJU_PLACES, key=len, reverse=True):
         if place in q:
             return place
-    for w in question.replace("?", " ").split():
-        for suf in ("동", "읍", "면", "리"):
-            if w.endswith(suf) and 2 <= len(w) <= 5:
-                return w
+    for w in re.split(r"[\s?!.,~]+", question):
+        for p in _PARTICLES:
+            if w.endswith(p) and len(w) > len(p) + 1:
+                w = w[: -len(p)]
+                break
+        if len(w) >= 3 and w[-1] in "동리" and w not in _NOT_PLACES:
+            return w
     return ""
 
 
@@ -158,9 +172,13 @@ def _route(question: str) -> list[tuple[str, dict]]:
         return [("check_past_forecast", {})]
     when = has("언제", "몇시", "이번주", "다음주", "내일", "모레", "오늘", "주말", "요일", "며칠")
     # '언제 써야 싸게 쓸까?'처럼 시간을 묻는 질문은 이득 설명이 아니라 시간 추천으로 보냄
-    if has("이득", "혜택", "좋은점", "장점", "왜써", "도움이돼") or (
+    if has("이득", "혜택", "좋은점", "장점", "왜써", "도움이돼", "뭐가좋", "뭐가이득", "어떤게좋", "어떤점이좋",
+           "왜좋", "무슨이득", "뭐가달라") or (
             has("돈이", "절약", "아낄", "아껴", "요금이줄", "싸져", "싸게", "싸지") and not when):
-        return [("explain_benefits", {})]
+        steps = [("explain_benefits", {})]
+        if when and has("전기차", "충전", "ev"):   # '이번 주에 충전하면 뭐가 좋아?' → 이번 주 좋은 시간 + 이득
+            steps.insert(0, ("recommend_actions", {"target": "전기차", "day": day}))
+        return steps
     if has("왜", "이유", "원인", "출력제어", "smp", "무슨뜻") or (has("뭐야", "뭔가요", "뭐예요") and has("잉여", "전기", "smp", "출력")):
         return [("explain_surplus", {})]
     if has("습관", "몇시에충전", "보통충전", "도민들은", "다른사람", "많이충전"):
@@ -211,6 +229,12 @@ def _template(name: str, r: dict) -> str:
     if name == "find_chargers":
         if r.get("error"):
             return f"- {r['error']}"
+        if r.get("search") == "전체":
+            return (f"- 어느 동네인지 알려 주시면 그 근처 충전소를 찾아 드릴게요. 제주에는 공용 충전소가 {r['count']:,}곳 있어요.\n"
+                    "  예: '노형동 근처 충전소', '애월 급속 충전기', '서귀포시청 근처 충전소'")
+        if not r.get("count"):
+            return (f"- {r['search']}에서는 충전소를 찾지 못했어요. "
+                    "동네 이름을 넣어 다시 물어봐 주세요. (예: '노형동 근처 충전소', '애월 급속 충전기')")
         lines = [f"- {r['search']}에서 충전소 {r['count']}곳을 찾았어요. 가까운 곳(급속 먼저):"]
         for c in r["chargers"]:
             quick = f"급속 {c['quick_count']}대" if c["has_quick"] else "완속만"
@@ -282,6 +306,15 @@ def _fallback(question: str, trace: list) -> str:
         result = _run_tool(name, args)
         trace.append({"tool": name, "args": args, "result": result})
         parts.append(_template(name, result))
+    # 여러 도구의 답에 같은 문장이 겹치면 한 번만 보여 줌 (예: 제주형 요금제 안내)
+    seen, lines = set(), []
+    for line in "\n".join(parts).split("\n"):
+        key = line.split(": ", 1)[-1].strip()
+        if key and key in seen:
+            continue
+        seen.add(key)
+        lines.append(line)
+    parts = ["\n".join(lines)]
     sources = sorted({s for t in trace for s in t["result"].get("sources", []) if isinstance(s, str)})
     return "\n".join(parts) + (f"\n\n출처: {', '.join(sources)}" if sources else "")
 
