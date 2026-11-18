@@ -4,7 +4,7 @@
 - LLM 키가 없거나 연결이 안 되면: 질문의 낱말로 도구를 고르고 정해진 문장으로 답합니다(비상 모드).
 
 .env 설정
-  LLM_PROVIDER=openai | upstage | anthropic | none
+  LLM_PROVIDER=gemini | openai | upstage | anthropic | none
   LLM_API_KEY=...
   LLM_MODEL=(선택, 비우면 config.DEFAULT_LLM 의 기본값)
 

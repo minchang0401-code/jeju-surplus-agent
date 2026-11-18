@@ -61,6 +61,9 @@ DEFAULT_LLM = {
     "openai": {"base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
     "upstage": {"base_url": "https://api.upstage.ai/v1", "model": "solar-pro2"},
     "anthropic": {"base_url": "https://api.anthropic.com/v1", "model": "claude-sonnet-4-5"},
+    # Google Gemini — OpenAI 호환 주소로 호출 (키: Google AI Studio). 무료 등급 하루 한도가 넉넉한 Flash-Lite 를 기본으로 씀
+    # (2026-11 기준 무료: 3.8 Flash 하루 20회, 3.5 Flash-Lite 하루 500회). 모델은 .env 의 LLM_MODEL 로 바꿀 수 있음
+    "gemini": {"base_url": "https://generativelanguage.googleapis.com/v1beta/openai", "model": "gemini-3.5-flash-lite"},
 }
 
 # 대한민국 공휴일 (2024~2026). 2026-11-17 웹 자료로 대조함:
