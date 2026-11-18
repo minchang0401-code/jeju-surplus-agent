@@ -61,7 +61,9 @@ def _system_prompt() -> str:
 - shift 가 '불가'·'낮음'인 기기는 억지로 시간을 옮기라고 하지 않고 도구의 how 를 전한다.
 - 질문에 딱 맞는 도구만 부른다. 묻지 않은 예보·충전 습관을 덧붙이지 않는다.
 - 어르신도 알아듣게 짧고 쉬운 말로, 3~6문장으로 답한다. 시간은 '낮 12시~오후 2시'처럼 말한다.
-- 도구를 썼다면 답 끝에 실제로 쓴 데이터 출처를 한 줄로 적는다 (예: 출처: 제주데이터허브 862, EPSIS). 도구를 안 썼으면 적지 않는다.
+- 도구를 썼다면 답 끝에 출처를 한 줄로 적는다. 출처는 그 도구 결과의 sources 에 있는 이름만 그대로 옮기고, 결과에 없는 출처를 지어내지 않는다.
+  도구를 안 썼으면 출처를 적지 않는다.
+- 전기차 배터리 %를 사용자가 말하지 않아 도구가 반쯤(50%)으로 가정했으면(ask_user 가 있으면), 가정했다고 밝히고 몇 % 남았는지 물어본다.
 - 지켜야 할 사실:
 {chr(10).join('  - ' + f['text'] for f in FACTS.values())}
 - 주의:
@@ -112,7 +114,13 @@ def _post_retry(url: str, headers: dict, json: dict, tries: int = 3) -> requests
     """429(분당 한도)·500·503(서버 붐빔)은 잠깐 기다렸다 다시 시도. 그래도 안 되면 원인을 담아 LLMError."""
     import time
     for i in range(tries):
-        r = requests.post(url, headers=headers, json=json, timeout=90)
+        try:
+            r = requests.post(url, headers=headers, json=json, timeout=60)
+        except (requests.Timeout, requests.ConnectionError) as e:   # 서버가 늦거나 연결이 끊기면 다시 시도
+            if i < tries - 1:
+                time.sleep(2)
+                continue
+            raise LLMError(f"응답 지연·연결 끊김({type(e).__name__}) — {tries}번 시도")
         if r.status_code < 400:
             return r
         if r.status_code in (429, 500, 503) and i < tries - 1:
@@ -319,6 +327,8 @@ def _route(question: str) -> list[tuple[str, dict]]:
         if when and has("전기차", "충전", "ev"):   # '이번 주에 충전하면 뭐가 좋아?' → 이번 주 좋은 시간 + 이득
             steps.insert(0, ("recommend_actions", {"target": "전기차", "day": day}))
         return steps
+    if has("태양광", "풍력", "발전소", "설비", "메가와트", "mw"):
+        return [("explain_surplus", {})]
     if has("왜", "이유", "원인", "출력제어", "smp", "무슨뜻", "어떻게생", "왜생", "생기는이유") or (has("뭐야", "뭔가요", "뭐예요") and has("잉여", "전기", "smp", "출력")):
         return [("explain_surplus", {})]
     if has("습관", "보통충전", "보통몇시", "다들", "도민들은", "다른사람", "많이충전"):

@@ -47,7 +47,7 @@ def _cases() -> list[dict]:
          "must_any": [] if tue_inside else NO_FORECAST,
          "note": f"다음 주 화요일={tue} ({'예보 범위 안' if tue_inside else '예보 범위 밖 → 예보할 수 없다고 해야 함'})"},
         {"id": "T03", "group": "예보", "turns": ["오늘 오후에 전기차 충전해도 돼?"],
-         "tools": ["forecast_surplus", "recommend_actions"]},
+         "tools": ["forecast_surplus", "recommend_actions", "plan_appliance_use"]},
         {"id": "T04", "group": "함정", "turns": ["12월 25일 크리스마스에도 전기 남아?"],
          "tools": ["forecast_surplus"], "must_any": NO_FORECAST,
          "note": "예보 범위 밖 → 예보처럼 말하면 안 됨"},

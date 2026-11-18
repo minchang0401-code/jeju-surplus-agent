@@ -633,7 +633,7 @@ TOOL_SPECS = [
          "limit": {"type": "integer", "default": 5}}}},
     {"name": "ev_charging_habits", "description": "제주 도민이 보통 몇 시에 충전하는지와 잉여 시간대를 비교한다.",
      "parameters": {"type": "object", "properties": {}}},
-    {"name": "explain_surplus", "description": "잉여전력이 언제·왜 생기는지 과거 통계(월·시간·요일, 일사, 설비)로 설명한다.",
+    {"name": "explain_surplus", "description": "잉여전력이 언제·왜 생기는지 과거 통계(월·시간·요일)로 설명한다. 제주 기후(일사·일조·바람, 허브 877), 태양광 발전 설비가 해마다 얼마나 늘었는지(사업체 수·누적 MW, 허브 123), 풍력발전 설비(허브 472)도 함께 돌려준다. '태양광이 얼마나 늘었어?', '풍력은 몇 MW야?' 같은 질문에도 이 도구를 쓴다.",
      "parameters": {"type": "object", "properties": {}}},
     {"name": "check_past_forecast", "description": "지난 기간의 예보가 실제로 맞았는지 비교한다.",
      "parameters": {"type": "object", "properties": {
