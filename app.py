@@ -131,7 +131,11 @@ for q, res in st.session_state.history:
                                            ignore_index=True)
                         st.map(mp, latitude="lat", longitude="lon", color="color", size="size", zoom=13)
                         st.caption("🔵 급속 있음 · ⚪ 완속만 · 🟠 찾은 동네 중심")
-                    st.dataframe(cdf.drop(columns=[c for c in ("lat", "lon") if c in cdf.columns]), hide_index=True)
+                    show = cdf.drop(columns=[c for c in ("lat", "lon", "has_quick") if c in cdf.columns]).rename(
+                        columns={"name": "충전소", "quick_count": "급속", "slow_count": "완속", "distance_km": "거리(km)",
+                                 "map_link": "위치"})
+                    st.dataframe(show, hide_index=True,
+                                 column_config={"위치": st.column_config.LinkColumn("위치", display_text="카카오맵 열기")})
                 elif t["tool"] == "grid_records" and "curtailment" in r:
                     h = pd.Series(r["curtailment"]["wind_mwh_by_hour"]).rename(index=lambda x: f"{int(x):02d}시")
                     st.bar_chart(h, y_label="풍력 출력제어량(MWh)")

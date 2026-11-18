@@ -58,6 +58,8 @@ def _system_prompt() -> str:
   (예: "내일은 가능성이 낮아요. 일요일 낮 12시~오후 2시는 '보통'이라 더 나아요.").
 - 전기차는 배터리가 몇 % 남았는지만 물을 수 있다(ask_user). 보일러는 ask_user 질문을 그대로 묻고,
   기름·가스 보일러라고 하면 fuel 을 넣어 다시 불러 support_program 을 안내한다.
+- 충전소를 알려 줄 때는 가까운 순서로 거리(distance_km)를 함께 말하고, 위치를 모르면 map_link(카카오맵)를 눌러 보라고 안내한다.
+  링크 주소를 지어내지 말고 결과의 map_link 만 쓴다.
 - 사용자가 출근·외출 일정을 말하면(예: '9시 출근 6시 퇴근') away_start·away_end 로 넣는다. 결과의 schedule 을 보고,
   예약 기능이 있는 기기는 집에 없어도 낮에 돌릴 수 있다고 알려 주고, 전기차는 '회사 근처 충전소에서 낮에'와 '집에서'를 나눠 말한다.
 - shift 가 '불가'·'낮음'인 기기는 억지로 시간을 옮기라고 하지 않고 도구의 how 를 전한다.
@@ -575,7 +577,8 @@ def _template(name: str, r: dict) -> str:
             cr = c.get("crowding_2022") or {}
             if "wait_rate" in cr:
                 extra = f" · 2022년 조사: 대기 발생 {cr['wait_rate']:.0%}, 관광객 {cr.get('tourist_share', 0):.0%}"
-            lines.append(f"  - {c['name']} ({dist}{quick}{fee}{extra})")
+            link = f" [지도]({c['map_link']})" if c.get("map_link") else ""
+            lines.append(f"  - {c['name']} ({dist}{quick}{fee}{extra}){link}")
         return "\n".join(lines)
     if name == "ev_charging_habits":
         if "peak_charging_start_hour" not in r:

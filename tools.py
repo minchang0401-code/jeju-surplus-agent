@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 import math
+from urllib.parse import quote
 import re
 from pathlib import Path
 
@@ -236,7 +237,9 @@ def find_chargers(area: str = "", quick_only: bool = False, limit: int = 5, radi
         name = str(r["chargingPlace"])
         item = {"name": name, "quick_count": int(r["quick"]), "slow_count": int(r["slow"]),
                 "has_quick": bool(r["has_quick"]),   # 주차요금(parkingFeeFlag)은 값의 뜻이 문서로 확인되지 않아 넣지 않음
-                "lat": round(float(r["lat"]), 5), "lon": round(float(r["lon"]), 5)}
+                "lat": round(float(r["lat"]), 5), "lon": round(float(r["lon"]), 5),
+                # 허브 862에는 주소가 없어 좌표로 카카오맵 위치 링크를 만듦 (누르면 지도·길찾기)
+                "map_link": "https://map.kakao.com/link/map/" + quote(f"{name},{float(r['lat']):.5f},{float(r['lon']):.5f}", safe=",")}
         if "distance_km" in r:
             item["distance_km"] = float(r["distance_km"])
         hit = crowd[crowd["station"].apply(lambda s: s in name or name in s)] if crowd is not None else None
