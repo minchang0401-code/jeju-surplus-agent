@@ -46,6 +46,16 @@ def _system_prompt() -> str:
 - "지금까지 대화 정리해줘", "방금 말한 거 다시 설명해줘"처럼 앞 대화에 대한 요청은 도구 없이 앞 대화 내용으로 답한다.
 - 질문이 도구로 답할 수 없는 내용(잉여전력·전기 사용 시간·충전소와 관계없는 질문)이면 도구를 억지로 부르지 말고,
   "제가 가진 데이터로는 답할 수 없어요"라고 말한 뒤 답할 수 있는 질문 예시 2~3개를 알려 준다.
+- 도민은 kWh·kW를 모른다. 세탁기·빨래·건조기·식기세척기·전기차(차 배터리)·히트펌프·온수기·보일러·음식물처리기·
+  의류관리기·밥솥·에어컨·히터·전기장판 등을 언제 쓸지 물으면 plan_appliance_use 를 먼저 부르고, 사용자에게 전력량을 묻지 않는다.
+  도구가 계산한 걸리는 시간·전력량을 '대략'과 '제품·코스마다 달라요'를 붙여 말한다.
+- 때를 나타내는 말은 시각으로 바꿔 start_hour·end_hour 에 넣는다: 새벽 0~6, 아침 6~10, 오전 6~12, 낮·점심 10~15,
+  오후 12~18, 저녁 18~22, 밤 20~24, 'N시' = 그 시각부터. 날은 day 에 넣는다(오늘·내일은 날짜로, 요일은 한 글자).
+- 원하는 시간대에 남는 전기가 거의 없으면(level 낮음 또는 requested_window_best 없음) 솔직히 그렇다고 먼저 말하고,
+  best_windows·alternatives 의 더 나은 시간대와 예약 기능을 권한다. evening_note 가 있으면 함께 전한다.
+- 전기차는 배터리가 몇 % 남았는지만 물을 수 있다(ask_user). 보일러는 ask_user 질문을 그대로 묻고,
+  기름·가스 보일러라고 하면 fuel 을 넣어 다시 불러 support_program 을 안내한다.
+- shift 가 '불가'·'낮음'인 기기는 억지로 시간을 옮기라고 하지 않고 도구의 how 를 전한다.
 - 질문에 딱 맞는 도구만 부른다. 묻지 않은 예보·충전 습관을 덧붙이지 않는다.
 - 어르신도 알아듣게 짧고 쉬운 말로, 3~6문장으로 답한다. 시간은 '낮 12시~오후 2시'처럼 말한다.
 - 도구를 썼다면 답 끝에 실제로 쓴 데이터 출처를 한 줄로 적는다 (예: 출처: 제주데이터허브 862, EPSIS). 도구를 안 썼으면 적지 않는다.
@@ -162,7 +172,55 @@ JEJU_PLACES = [
     # 자주 쓰는 장소
     "제주공항", "공항", "도청", "제주시청", "서귀포시청", "시청", "터미널", "함덕", "협재", "월정",
 ]
-APPLIANCE_WORDS = ("빨래", "세탁", "식기", "건조기", "가전", "에어컨", "보일러", "청소기", "다리미", "밥솥", "충전기")
+APPLIANCE_WORDS = ("빨래", "세탁", "식기", "설거지", "건조기", "가전", "에어컨", "보일러", "청소기", "다리미", "밥솥", "충전기",
+                   "히트펌프", "온수기", "음식물", "스타일러", "에어드레서", "의류관리기", "히터", "온풍기", "난로",
+                   "전기장판", "온수매트", "냉장고", "킥보드", "배터리")
+# 이 기기들은 기기 사전(plan_appliance_use)으로 시간·전력량을 계산해 답함 ('가전'처럼 뭉뚱그린 말은 제외)
+PLAN_WORDS = tuple(w for w in APPLIANCE_WORDS if w not in ("가전", "청소기", "다리미", "충전기"))
+_FUEL_WORDS = ("기름", "가스", "석유", "등유", "lpg")
+
+
+def _guess_time(question: str) -> tuple[int | None, int | None]:
+    """'오늘 저녁', '밤에', '오후 3시' → (시작 시각, 끝 시각). 없으면 (None, None)."""
+    q = question.replace(" ", "")
+    m = re.search(r"(오전|오후|저녁|밤|낮|아침|새벽)?(\d{1,2})시", q)
+    if m:
+        h = int(m.group(2))
+        if m.group(1) in ("오후", "저녁", "밤") and h < 12:
+            h += 12
+        return min(h, 23), None
+    for words, rng in ((("새벽",), (0, 6)), (("아침",), (6, 10)), (("저녁", "퇴근후", "퇴근하고"), (18, 22)),
+                       (("밤", "자기전", "자기 전", "잘때"), (20, 24)), (("오전",), (6, 12)),
+                       (("점심", "낮"), (10, 15)), (("오후",), (12, 18))):
+        if any(w.replace(" ", "") in q for w in words):
+            return rng
+    return None, None
+
+
+def _guess_battery(question: str) -> float | None:
+    """'반 남았어'=50, '30%'·'30퍼' → 30, '거의 없어'=10, '조금 남'=20"""
+    q = question.replace(" ", "").lower()
+    for name in ("아이오닉5", "아이오닉6", "ev3", "ev6", "ev9"):   # 차 이름 속 숫자를 %로 읽지 않도록
+        q = q.replace(name, " ")
+    m = re.search(r"(\d{1,3})(%|퍼센트|퍼)", q)
+    if m:
+        return float(m.group(1))
+    if "반" in q and ("남" in q or "정도" in q or "쯤" in q):
+        return 50.0
+    if "거의없" in q or "바닥" in q:
+        return 10.0
+    if "조금남" in q or "얼마안남" in q:
+        return 20.0
+    return None
+
+
+def _guess_car(question: str) -> str:
+    from appliances import EV_MODELS
+    q = question.replace(" ", "").lower()
+    for name in sorted(EV_MODELS, key=len, reverse=True):
+        if name.replace(" ", "") in q:
+            return name
+    return ""
 
 
 def _guess_day(question: str) -> str:
@@ -174,6 +232,16 @@ def _guess_day(question: str) -> str:
     for word, plus in (("모레", 2), ("내일", 1), ("오늘", 0)):
         if word in q:
             return (today + timedelta(days=plus)).strftime("%Y-%m-%d")
+    m = re.search(r"(\d{1,2})월(\d{1,2})일", q)
+    special = (12, 25) if "크리스마스" in q or "성탄" in q else ((int(m.group(1)), int(m.group(2))) if m else None)
+    if special:
+        try:
+            d = date(today.year, *special)
+            if d < today:
+                d = date(today.year + 1, *special)
+            return d.strftime("%Y-%m-%d")
+        except ValueError:
+            pass
     if "주말" in q:  # 이번 주 토요일 (토·일 중 더 좋은 날은 추천 목록에서 함께 보임)
         return ""
     return ""
@@ -183,7 +251,7 @@ def _guess_day(question: str) -> str:
 _PARTICLES = ("에서", "으로", "근처", "주변", "쪽", "에", "로", "의", "은", "는", "이", "가", "을", "를")
 # '동'·'리'로 끝나지만 동네 이름이 아닌 흔한 낱말
 _NOT_PLACES = {"자동", "이동", "활동", "행동", "작동", "변동", "가동", "운동", "재가동",
-               "우리", "거리", "자리", "소리", "빨리", "멀리", "요리", "정리", "처리", "관리", "무리"}
+               "우리", "거리", "자리", "소리", "빨리", "멀리", "요리", "정리", "처리", "관리", "무리", "배터리"}
 
 
 def _guess_area(question: str) -> str:
@@ -231,6 +299,22 @@ def _route(question: str) -> list[tuple[str, dict]]:
         return [("explain_surplus", {})]
     if has("습관", "보통충전", "보통몇시", "다들", "도민들은", "다른사람", "많이충전"):
         return [("ev_charging_habits", {})]
+    small = has("휴대폰", "핸드폰", "폰", "노트북", "킥보드", "보조배터리", "전기자전거", "로봇청소기")
+    if small:
+        return [("plan_appliance_use", {"appliance": question, "day": day})]
+    if not small and has("전기차", "충전", "ev", "배터리") and (
+            _guess_battery(question) is not None or _guess_car(question) or has("배터리")):
+        sh, eh = _guess_time(question)
+        args = {"appliance": "전기차", "day": day, "battery_percent": _guess_battery(question), "car": _guess_car(question)}
+        if sh is not None:
+            args["start_hour"] = sh
+        if eh is not None:
+            args["end_hour"] = eh
+        steps = [("plan_appliance_use", args)]
+        area = _guess_area(question)
+        if area:
+            steps.append(("find_chargers", {"area": area, "quick_only": "급속" in q}))
+        return steps
     if has("전기차", "충전", "ev"):
         area = _guess_area(question)
         if area or has("충전소", "충전기", "어디", "근처", "가까운"):
@@ -241,6 +325,18 @@ def _route(question: str) -> list[tuple[str, dict]]:
         return [("recommend_actions", {"target": "전기차", "day": day})]
     if has("데이터", "상태", "연결", "출처"):
         return [("data_status", {})]
+    if has(*PLAN_WORDS):
+        from appliances import find_all
+        sh, eh = _guess_time(question)
+        steps = []
+        for key in (find_all(question) or [question])[:3]:   # '빨래랑 식기세척기' → 기기마다 하나씩
+            args = {"appliance": key if key != question else question, "day": day, "question": question}
+            if sh is not None:
+                args["start_hour"] = sh
+            if eh is not None:
+                args["end_hour"] = eh
+            steps.append(("plan_appliance_use", args))
+        return steps
     if has(*APPLIANCE_WORDS) or has("돌려", "돌릴", "켜도", "써도", "쓰면좋", "언제쓰", "써야", "싸게", "싸지"):
         return [("recommend_actions", {"target": "가전", "day": day})]
     if has("예보", "며칠", "이번주", "다음주", "언제", "내일", "모레", "주말", "남아", "남는", "잉여"):
@@ -251,11 +347,93 @@ def _route(question: str) -> list[tuple[str, dict]]:
 UNKNOWN_ANSWER = (
     "죄송해요, 이 질문은 제가 가진 데이터로는 답할 수 없어요. 제가 도와드릴 수 있는 건 아래와 같아요.\n"
     "- 언제 전기가 남는지 예보 (예: '이번 주 언제 전기가 남아?')\n"
-    "- 빨래·식기세척기·전기차 충전 좋은 시간 (예: '내일 빨래 언제 돌려?')\n"
+    "- 빨래·식기세척기·건조기·전기차 충전 좋은 시간과 걸리는 시간·전기량 (예: '오늘 저녁에 세탁기 돌리려고', '차 배터리 반 남았어')\n"
     "- 동네 근처 충전소 (예: '노형동 근처 급속 충전소')\n"
     "- 잉여전력이 생기는 이유, 도민이 얻는 이득, 지난 예보가 맞았는지\n"
     "질문을 이 중 하나로 바꿔 주시면 데이터를 찾아 답해 드릴게요."
 )
+
+
+def _day_text(d: str, wd: str) -> str:
+    return f"{int(d[5:7])}월 {int(d[8:10])}일({wd})"
+
+
+def _range_text(lo: float, hi: float, unit: str) -> str:
+    f = lambda x: f"{x:g}"
+    return f"{f(lo)}{unit}" if lo == hi else f"{f(lo)}~{f(hi)}{unit}"
+
+
+def _hours_word(h: float) -> str:
+    """1.7 → '1시간 40분', 0.5 → '30분', 2.0 → '2시간'"""
+    total = int(round(h * 6)) * 10           # 10분 단위
+    hh, mm = divmod(total, 60)
+    if hh == 0:
+        return f"{max(mm, 10)}분"
+    return f"{hh}시간" + (f" {mm}분" if mm else "")
+
+
+def _plan_text(r: dict) -> str:
+    """plan_appliance_use 결과 → 쉬운 말"""
+    name, lines = r["appliance"], []
+    if "ev" in r:
+        ev = r["ev"]
+        lines.append(f"- 전기차: {ev['battery_note']}으로 {int(ev['now_percent'])}% → {int(ev['target_percent'])}% 채우려면 "
+                     f"전기 약 {ev['kwh']:g}kWh, 완속 충전기(7kW)로 약 {_hours_word(ev['hours'])} 걸려요.")
+        if ev["hours"] >= 4:
+            lines.append(f"- 완속은 오래 걸려 낮 시간에 다 못 맞출 수 있어요. 급속 충전기(50kW)를 쓰면 약 "
+                         f"{_hours_word(ev['quick_hours'])}이라 남는 전기 시간에 맞추기 쉬워요.")
+    elif r.get("kwh_range") or r.get("hours_range") or r.get("kwh_per_hour_range"):
+        bits = []
+        if r.get("hours_range"):
+            lo, hi = r["hours_range"]
+            bits.append(f"한 번에 약 {_hours_word(lo)}~{_hours_word(hi)}")
+        if r.get("kwh_range"):
+            bits.append(f"전기 약 {_range_text(*r['kwh_range'], 'kWh')}")
+        if r.get("kwh_per_hour_range"):
+            bits.append(f"1시간에 전기 약 {_range_text(*r['kwh_per_hour_range'], 'kWh')}")
+        lines.append(f"- {name}: " + ", ".join(bits) + " 써요 (제품·코스마다 달라요).")
+    if r["mode"] in ("ask", "none") or r["shift"] == "불가":
+        lines.append(f"- {r['how']}")
+        if r.get("ask_user"):
+            lines.append(f"- {r['ask_user']}")
+        if r.get("support_program"):
+            lines.append(f"- {r['support_program']}")
+        return "\n".join(lines)
+    if r.get("not_forecast"):
+        lines.append(f"- {r['not_forecast']}")
+        lines.append(f"- {r['how']}")
+        return "\n".join(lines)
+    if r["shift"] == "낮음":
+        lines.append(f"- {r['how']}")
+        wins = r.get("alternatives") or r.get("best_windows") or []
+        if wins:
+            w = wins[0]
+            lines.append(f"- 그래도 낮에 쓸 수 있다면 {_day_text(w['date'], w['weekday'])} {w['time_text']}가 가장 나아요"
+                         f"(가능성 {w['level']}).")
+        return "\n".join(lines)
+    req = r.get("requested_window_best", "없음")
+    if req != "없음":
+        if not req or req["level"] == "낮음":
+            lines.append("- 원하신 때에는 제주에 남는 전기가 거의 없을 것 같아요.")
+        else:
+            lines.append(f"- 원하신 때 중에는 {_day_text(req['date'], req['weekday'])} {req['time_text']}가 가장 나아요"
+                         f"(가능성 {req['level']}).")
+    if r.get("evening_note"):
+        lines.append(f"- {r['evening_note']}")
+    wins = r.get("alternatives") or r.get("best_windows") or []
+    if wins:
+        if all(w["level"] == "낮음" for w in wins):
+            lines.append("- 예보 기간에는 남는 전기 가능성이 모두 낮아요. 그래도 그중 나은 때는:")
+        else:
+            verb = "충전하기" if name == "전기차" else ("틀기" if name in ("에어컨", "전기히터") else "돌리기")
+            lines.append(f"- {name} {verb} 좋은 때 ({r['length_hours']}시간 연속):")
+        for w in wins:
+            ref = " · 날씨 미반영 참고치" if w["basis"].startswith("날씨 미반영") else ""
+            lines.append(f"  · {_day_text(w['date'], w['weekday'])} {w['time_text']} (가능성 {w['level']}{ref})")
+    lines.append(f"- {r['how']}")
+    if r.get("ask_user"):
+        lines.append(f"- {r['ask_user']}")
+    return "\n".join(lines)
 
 
 def _template(name: str, r: dict) -> str:
@@ -282,6 +460,8 @@ def _template(name: str, r: dict) -> str:
         lines.append("- 모두에게: " + r["public"])
         lines.append("- 앞으로: " + r["future"])
         return "\n".join(lines)
+    if name == "plan_appliance_use":
+        return _plan_text(r)
     if name == "how_to_act":
         return "- 이렇게 해 보세요:\n" + "\n".join(f"  {i}. {t}" for i, t in enumerate(r["steps"], 1))
     if name == "find_chargers":
@@ -369,6 +549,13 @@ def _with_context(question: str, history: list[str] | None) -> tuple[str, str]:
     q = question.replace(" ", "").lower()
     if any(t in q for t in _TOPIC):
         return question, ""
+    # '기름이야'(보일러 종류 답), '30% 남았어'(배터리 답) 처럼 앞 질문에 대한 대답
+    for prev in reversed(history[-2:]):
+        p = prev.replace(" ", "").lower()
+        if "보일러" in p and any(w in q for w in _FUEL_WORDS + ("전기",)):
+            return f"{question} 보일러", prev
+        if any(w in p for w in ("전기차", "충전", "ev", "배터리")) and _guess_battery(question) is not None:
+            return f"전기차 배터리 {question} {prev}", prev
     if not (any(w in q for w in _FOLLOWUP) or (not _route(question) and len(q) <= 15)):
         return question, ""
     # '그럼 맛집은?'처럼 앞 주제와 관계없는 질문까지 끌어오지 않도록, 묻는 말(언제·어디·어떻게 …)이 있을 때만 이어 받음
@@ -401,7 +588,7 @@ def _fallback(question: str, trace: list, history: list[str] | None = None) -> s
     seen, lines = set(), []
     for line in "\n".join(parts).split("\n"):
         key = line.split(": ", 1)[-1].strip()
-        if key and key in seen:
+        if key and key in seen and not line.startswith("  ·"):   # 시간대 목록은 기기마다 보여 줌
             continue
         seen.add(key)
         lines.append(line)

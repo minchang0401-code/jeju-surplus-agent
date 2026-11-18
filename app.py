@@ -105,6 +105,13 @@ for q, res in st.session_state.history:
                     st.line_chart(both)
                 elif t["tool"] == "find_chargers" and r.get("chargers"):
                     st.dataframe(pd.DataFrame(r["chargers"]), hide_index=True)
+                elif t["tool"] == "plan_appliance_use" and (r.get("alternatives") or r.get("best_windows")):
+                    w = pd.DataFrame(r.get("alternatives") or r["best_windows"])
+                    w = w.rename(columns={"date": "날짜", "weekday": "요일", "time_text": "시간대",
+                                          "avg_prob": "남을 가능성", "level": "등급", "basis": "근거"})
+                    st.dataframe(w[["날짜", "요일", "시간대", "남을 가능성", "등급", "근거"]], hide_index=True)
+                    if r.get("ev"):
+                        st.caption(f"계산: {r['ev']['battery_note']}, {r['ev']['assumption']} → {r['ev']['kwh']}kWh")
                 elif t["tool"] == "check_past_forecast" and r.get("days"):
                     st.dataframe(pd.DataFrame(r["days"]), hide_index=True)
                 st.caption("출처: " + ", ".join(map(str, r.get("sources", []))))

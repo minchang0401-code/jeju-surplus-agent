@@ -11,7 +11,7 @@ from config import REPORTS
 
 SCENARIOS = [
     ("1. 일반 가정", "이번 주에 빨래랑 식기세척기 언제 돌리면 좋아?",
-     ["recommend_actions"], "잉여 가능성 높은 날·시간과 생활 행동을 안내"),
+     ["plan_appliance_use"], "기기마다 걸리는 시간·전력량을 계산하고 잉여 가능성 높은 연속 시간대를 안내"),
     ("2. 전기차 도민", "토요일에 노형동 근처에서 급속 충전하려는데?",
      ["recommend_actions", "find_chargers"], "토요일 예보 + 허브 862·1225 근거 (묻지 않은 내용은 덧붙이지 않음)"),
     ("3. 원인 설명", "잉여전력이 왜 생기는 거야?",
@@ -23,11 +23,11 @@ SCENARIOS = [
 ]
 
 
-# 비상 모드(LLM 없음)에서 질문 → 도구 고르기가 맞는지 보는 추가 질문 20개
+# 비상 모드(LLM 없음)에서 질문 → 도구 고르기가 맞는지 보는 추가 질문
 ROUTING_TESTS = [
-    ("내일 세탁기 돌려도 돼?", "recommend_actions"),
-    ("이번 주말 빨래 언제가 좋아", "recommend_actions"),
-    ("모레 식기세척기 언제 쓰면 좋아요", "recommend_actions"),
+    ("내일 세탁기 돌려도 돼?", "plan_appliance_use"),
+    ("이번 주말 빨래 언제가 좋아", "plan_appliance_use"),
+    ("모레 식기세척기 언제 쓰면 좋아요", "plan_appliance_use"),
     ("다음주 예보 보여줘", "forecast_surplus"),
     ("며칠 동안 언제 전기가 남아?", "forecast_surplus"),
     ("애월 쪽 충전소 알려줘", "find_chargers"),
@@ -44,7 +44,7 @@ ROUTING_TESTS = [
     ("저번 주 예보 맞았는지 알려줘", "check_past_forecast"),
     ("데이터 출처가 어디야?", "data_status"),
     ("지금 연결 상태 어때?", "data_status"),
-    ("에어컨은 언제 트는 게 좋아?", "recommend_actions"),
+    ("에어컨은 언제 트는 게 좋아?", "plan_appliance_use"),
     ("그래서 결국 도민들이 얻는 이득이 뭐야?", "explain_benefits"),
     ("이거 쓰면 전기요금이 싸져?", "explain_benefits"),
     ("이번주는 언제 전기가 남아? 언제 전기를 써야 싸게 쓸 수 있을까?", "recommend_actions"),
@@ -58,6 +58,21 @@ ROUTING_TESTS = [
     ("잉여전력은 어떻게 생겨?", "explain_surplus"),
     ("빨래를 아끼려면 어떻게 해야 해?", "how_to_act"),
     ("노형동에서 몇 시에 충전하면 좋아?", "recommend_actions"),
+    # 생활 언어 (kWh 를 말하지 않는 질문) — 기기 사전으로 시간·전력량 계산
+    ("오늘 저녁에 세탁기 돌리려고", "plan_appliance_use"),
+    ("빨래 언제 돌려?", "plan_appliance_use"),
+    ("차 배터리 반 남았어", "plan_appliance_use"),
+    ("아이오닉5 30% 남았는데 내일 충전하려면?", "plan_appliance_use"),
+    ("보일러 언제 틀어?", "plan_appliance_use"),
+    ("토요일 오후에 건조기 돌려도 돼?", "plan_appliance_use"),
+    ("밤에 식기세척기 돌릴건데", "plan_appliance_use"),
+    ("음식물처리기 언제 돌려?", "plan_appliance_use"),
+    ("히트펌프 축열조 언제 데워?", "plan_appliance_use"),
+    ("스타일러 언제 돌리면 좋아?", "plan_appliance_use"),
+    ("온풍기 틀어도 돼?", "plan_appliance_use"),
+    ("휴대폰 충전 언제 해?", "plan_appliance_use"),
+    ("냉장고 언제 켜?", "plan_appliance_use"),
+    ("노형동에서 차 배터리 20% 남았는데 언제 충전해?", "find_chargers"),
     ("오늘 점심 뭐 먹지?", "(답할 수 없음)"),
     ("내가 말한 질문에 다른 답을 하는데?", "(답할 수 없음)"),
     ("제주 맛집 추천해줘", "(답할 수 없음)"),
@@ -70,6 +85,9 @@ FOLLOWUP_TESTS = [
     ("잉여전력이 생기는 시간에 충전을 하면 어떤 점이 좋아?", "그럼 언제 하면 돼?", "recommend_actions"),
     ("노형동 충전소 알려줘", "그럼 거기는 몇 시가 좋아?", "recommend_actions"),
     ("내일 빨래 언제 돌려?", "그럼 그거 어떻게 하면 돼?", "how_to_act"),
+    ("보일러 언제 틀어?", "기름 보일러야", "plan_appliance_use"),
+    ("보일러 언제 틀어?", "기름이야", "plan_appliance_use"),
+    ("전기차 언제 충전해?", "30퍼 남았어", "plan_appliance_use"),
     ("잉여전력이 생기는 시간에 충전을 하면 어떤 점이 좋아?", "그럼 맛집은?", "(답할 수 없음)"),
 ]
 
@@ -85,6 +103,30 @@ def followup_check() -> list[str]:
         lines.append(f"| {prev} | {q} | {expected} | {', '.join(tools)} | {'통과' if hit else '실패'} |")
     lines.insert(1, f"\n통과 {ok}/{len(FOLLOWUP_TESTS)}\n")
     print(f"이어지는 질문 이해 {ok}/{len(FOLLOWUP_TESTS)}")
+    return lines
+
+
+# (질문, 답에 꼭 있어야 할 말, 답에 있으면 안 되는 말) — 생활 언어 질문에 계산·정직성까지 맞는지 확인
+ANSWER_TESTS = [
+    ("오늘 저녁에 세탁기 돌리려고", ["0.4~1kWh", "거의 없", "예약"], ["kWh를 알려"]),
+    ("아이오닉5 30% 남았는데 내일 충전하려면?", ["84", "42kWh", "급속"], []),
+    ("차 배터리 반 남았어", ["50% → 80%", "2시간 50분"], ["몇 %"]),
+    ("보일러 언제 틀어?", ["기름·가스", "전기보일러인가요"], []),
+    ("크리스마스에 빨래하려고", ["예보할 수 있는 기간", "밖"], ["가능성 보통"]),
+    ("냉장고 언제 켜?", ["옮기기 어려워"], ["연속)"]),
+    ("전기장판 써도 돼?", ["억지로 옮길 필요는 없어요"], ["연속)"]),
+]
+
+
+def answer_check() -> list[str]:
+    lines, ok = [f"## 생활 언어 답변 시험 ({len(ANSWER_TESTS)}개)", "", "| 질문 | 꼭 있어야 할 말 | 결과 |", "|---|---|---|"], 0
+    for q, must, must_not in ANSWER_TESTS:
+        a = ask(q)["answer"]
+        hit = all(m in a for m in must) and not any(m in a for m in must_not)
+        ok += hit
+        lines.append(f"| {q} | {', '.join(must)} | {'통과' if hit else '실패'} |")
+    lines.insert(1, f"\n통과 {ok}/{len(ANSWER_TESTS)}\n")
+    print(f"생활 언어 답변 {ok}/{len(ANSWER_TESTS)}")
     return lines
 
 
@@ -117,7 +159,7 @@ def main() -> None:
             lines.append(f"- 데이터 부족 안내: {errors}")
         lines += ["", "```", res["answer"], "```", ""]
     lines.insert(1, f"\n통과 {passed}/{len(SCENARIOS)}\n")
-    lines += [""] + routing_check() + [""] + followup_check()
+    lines += [""] + routing_check() + [""] + followup_check() + [""] + answer_check()
     REPORTS.mkdir(exist_ok=True)
     out = REPORTS / "scenario_results.md"
     out.write_text("\n".join(lines), encoding="utf-8")

@@ -11,7 +11,9 @@
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+import math
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -20,6 +22,7 @@ from config import (MAX_HORIZON_DAYS, DATA, FORECAST_HOURLY_CSV, HUB_DATA, HUB_F
                     MODELS, PREDICTION_LOG, SMP_HOURLY_CSV, WEATHER_HOURLY_CSV)
 from facts import FACTS
 from features import load_labels
+from predict import level_of
 
 WEEKDAYS = "월화수목금토일"
 
@@ -453,9 +456,149 @@ def how_to_act(target: str = "전기차") -> dict:
             "sources": [FACTS["jeju_tou_tariff"]["source"], "한전:ON(online.kepco.co.kr) 고객 상담 창구"]}
 
 
+# ---------------------------------------------------------------- ⑩ 기기 사용 계획 (생활 언어 → 시간·전력량 계산)
+def _hour_label_text(start_hour: int, length: int) -> str:
+    """시작 시각 s, 길이 L → '낮 12시~오후 2시' (SMP 표기 시각은 구간 끝이라 s+1..s+L)."""
+    return _hours_text(list(range(start_hour + 1, start_hour + length + 1)))
+
+
+def plan_appliance_use(appliance: str = "", day: str = "", start_hour: int | None = None, end_hour: int | None = None,
+                       battery_percent: float | None = None, car: str = "", fuel: str = "", question: str = "") -> dict:
+    """기기 이름(또는 질문 문장)으로 걸리는 시간·전력량을 정하고, 예보에서 남는 전기가 가장 많은 연속 시간대를 찾음.
+    day: 'YYYY-MM-DD' 또는 요일 한 글자('토') 또는 '' (예보 기간 전체)
+    start_hour/end_hour: 사용자가 원하는 시간대(시작 시각 기준 0~24). 주면 그 시간대도 따로 평가함."""
+    from appliances import APPLIANCES, EV_SOURCE, DEFAULT_EARLIEST, DEFAULT_LATEST, ev_energy, find_appliance
+    from predict import forecast
+    key = appliance if appliance in APPLIANCES else find_appliance(appliance or question)
+    if key is None:
+        return {"error": "어떤 기기인지 찾지 못했어요.",
+                "supported": list(APPLIANCES), "sources": []}
+    a = APPLIANCES[key]
+    out = {"appliance": key, "shift": a["shift"], "mode": a["mode"], "how": a["how"],
+           "basis": a["basis"], "note": a["note"], "sources": [a["source"]]}
+    # --- 전력량·시간
+    if key == "전기차":
+        ev = ev_energy(battery_percent, car)
+        out["ev"] = ev
+        out["sources"].append(EV_SOURCE)
+        length = ev["hours_ceil"]
+        if ev["assumed_percent"]:
+            out["ask_user"] = "배터리가 지금 몇 % 남았는지 알려 주시면 더 정확해요. (지금은 반쯤 남았다고 보고 계산했어요)"
+    else:
+        if a.get("kwh"):
+            out["kwh_range"] = list(a["kwh"])
+        if a.get("kwh_per_hour"):
+            out["kwh_per_hour_range"] = list(a["kwh_per_hour"])
+        if a.get("hours"):
+            out["hours_range"] = list(a["hours"])
+        length = math.ceil(a["hours"][1]) if a.get("hours") else 2
+    text = f"{appliance} {fuel} {question}"
+    if a["mode"] == "ask" and any(w in text for w in ("기름", "가스", "석유", "등유", "LPG", "lpg")):
+        out["fuel"] = "기름·가스"
+        out["how"] = ("기름·가스 보일러는 연료를 태워 난방해서 전기를 거의 쓰지 않아요. 그래서 켜는 시간을 옮겨도 "
+                      "남는 전기를 쓰는 효과는 없어요. 대신 전기로 난방하는 히트펌프로 바꾸면 낮에 남는 전기로 물을 데워 둘 수 있어요.")
+        out["support_program"] = ("제주도 '생활 속 히트펌프 보급사업'이 기름·가스 보일러를 히트펌프로 바꾸는 비용을 지원해요"
+                                  "(모집 시기·조건은 제주도 공고 확인).")
+        return out
+    if a["mode"] == "ask" and (fuel.startswith("전기") or re.search(r"전기(보일러|야|예요|에요|이에요|입니다|로|거)", text.replace(" ", ""))):
+        return plan_appliance_use("전기보일러", day, start_hour, end_hour)
+    if a["mode"] == "ask":
+        out["ask_user"] = "전기보일러인가요, 기름·가스 보일러인가요?"
+        out["support_program"] = ("기름·가스 보일러 가구는 제주도 '생활 속 히트펌프 보급사업'으로 "
+                                  "히트펌프 교체를 지원받을 수 있어요(모집 시기·조건은 제주도 공고 확인).")
+        return out
+    if a["shift"] == "불가":
+        return out
+    # --- 예보에서 연속 시간대 찾기 (오늘~5일 뒤)
+    today = date.today()
+    last = today + timedelta(days=MAX_HORIZON_DAYS)
+    fc = forecast(str(today), MAX_HORIZON_DAYS + 1, log=False)
+    fc["d"] = fc["date"].dt.date
+    now_h = datetime.now().hour
+    days = sorted(fc["d"].unique())
+    day = (day or "").strip()
+    rel = {"오늘": 0, "내일": 1, "모레": 2}
+    if day in rel:
+        day = str(today + timedelta(days=rel[day]))
+    elif day.endswith("요일") and len(day) == 3:
+        day = day[0]
+    if day:
+        wd = "월화수목금토일"
+        days = [d for d in days if str(d) == day or (len(day) == 1 and wd[d.weekday()] == day)]
+        if not days:
+            out["not_forecast"] = f"{day}은(는) 예보할 수 있는 기간({today} ~ {last}) 밖이에요."
+            return out
+    lo = DEFAULT_EARLIEST if start_hour is None else int(start_hour)
+    hi = DEFAULT_LATEST if end_hour is None else int(end_hour)
+    cands = []
+    for d in days:
+        g = fc[fc["d"] == d].set_index("hour")
+        full = bool((g["model_used"] == "full").any())
+        for s in range(0, 24 - length + 1):
+            if d == today and s < now_h:
+                continue
+            p = [float(g.loc[h, "prob"]) for h in range(s + 1, s + length + 1) if h in g.index]
+            if len(p) < length:
+                continue
+            cands.append({"date": str(d), "weekday": "월화수목금토일"[d.weekday()], "start_hour": s,
+                          "end_hour": s + length, "time_text": _hour_label_text(s, length),
+                          "avg_prob": round(sum(p) / len(p), 3), "level": level_of(sum(p) / len(p)),
+                          "basis": "기상청 단기예보 반영" if full else "날씨 미반영(과거 패턴) 참고치",
+                          "in_requested": lo <= s and s + length <= hi})
+    def top3(cs):
+        best = []
+        for c in sorted(cs, key=lambda c: -c["avg_prob"]):   # 날짜마다 하나씩, 상위 3개
+            if all(b["date"] != c["date"] for b in best):
+                best.append(c)
+            if len(best) == 3:
+                break
+        return best
+
+    usable = [c for c in cands if DEFAULT_EARLIEST <= c["start_hour"] and c["end_hour"] <= DEFAULT_LATEST]
+    out["length_hours"] = length
+    out["best_windows"] = top3(usable)
+    want_alt = bool(day and not out["best_windows"]) or (start_hour is not None and int(start_hour) >= 16)
+    if (start_hour is not None or end_hour is not None or day):
+        req = [c for c in cands if c["in_requested"]]
+        want_alt = want_alt or not req or max(c["avg_prob"] for c in req) < 0.2
+    if want_alt:
+        # 원한 날·시간에 마땅한 자리가 없으면 예보 기간 전체에서 대안을 함께 줌
+        alt = []
+        for d in sorted(fc["d"].unique()):
+            g = fc[fc["d"] == d].set_index("hour")
+            full = bool((g["model_used"] == "full").any())
+            for s in range(DEFAULT_EARLIEST, DEFAULT_LATEST - length + 1):
+                if d == today and s < now_h:
+                    continue
+                p = [float(g.loc[h, "prob"]) for h in range(s + 1, s + length + 1) if h in g.index]
+                if len(p) == length:
+                    alt.append({"date": str(d), "weekday": "월화수목금토일"[d.weekday()], "start_hour": s,
+                                "end_hour": s + length, "time_text": _hour_label_text(s, length),
+                                "avg_prob": round(sum(p) / len(p), 3), "level": level_of(sum(p) / len(p)),
+                                "basis": "기상청 단기예보 반영" if full else "날씨 미반영(과거 패턴) 참고치"})
+        out["alternatives"] = top3(alt)
+    if start_hour is not None or end_hour is not None or day:
+        req = [c for c in cands if c["in_requested"]]
+        if req:
+            r = max(req, key=lambda c: c["avg_prob"])
+            out["requested_window_best"] = r
+        else:
+            out["requested_window_best"] = None
+            out["requested_note"] = f"원하신 시간대 안에 {length}시간 연속으로 돌릴 자리가 없어요."
+    # 저녁·밤 사용 안내 (남는 전기는 거의 낮에 생김)
+    if start_hour is not None and int(start_hour) >= 16:
+        out["evening_note"] = ("저녁에는 제주에 남는 전기가 거의 없어요(잉여 시간의 약 91%가 오전 10시~오후 3시). "
+                               "꼭 저녁에 써야 하면, 계시별 요금제 가입 가구는 밤 10시 이후(경부하)가 저녁 4~10시보다 요금이 싸요.")
+        out["sources"].append(FACTS["jeju_tou_tariff"]["source"])
+    out["forecast_range"] = f"{today} ~ {last}"
+    out["sources"] += ["EPSIS 제주 시간별 SMP(학습 정답)", "기상청 단기예보"]
+    return out
+
+
 TOOLS = {
     "explain_benefits": explain_benefits,
     "how_to_act": how_to_act,
+    "plan_appliance_use": plan_appliance_use,
     "forecast_surplus": forecast_surplus,
     "recommend_actions": recommend_actions,
     "find_chargers": find_chargers,
@@ -490,6 +633,18 @@ TOOL_SPECS = [
          "start": {"type": "string", "description": "YYYY-MM-DD"}, "end": {"type": "string", "description": "YYYY-MM-DD"}}}},
     {"name": "explain_benefits", "description": "이 서비스를 쓰면 도민이 얻는 이득(지금 바로/조건부/앞으로)과 얻지 못하는 것을 솔직하게 정리한다.",
      "parameters": {"type": "object", "properties": {}}},
+    {"name": "plan_appliance_use", "description": "도민이 말한 기기(세탁기·건조기·식기세척기·전기차·히트펌프·온수기·전기보일러·음식물처리기·"
+     "의류관리기·밥솥·작은 충전기기·에어컨·전기히터·전기장판·보일러)의 걸리는 시간·전력량을 기기 사전으로 계산하고, "
+     "예보에서 남는 전기가 가장 많은 연속 시간대를 찾는다. 사용자가 원하는 날·시간대가 있으면 그 시간대도 평가한다. "
+     "사용자에게 kWh·kW를 묻지 말고 이 도구를 먼저 부른다.",
+     "parameters": {"type": "object", "properties": {
+         "appliance": {"type": "string", "description": "기기 이름 또는 사용자가 쓴 말 (예: '빨래', '차 충전', '보일러')"},
+         "day": {"type": "string", "description": "YYYY-MM-DD 또는 요일 한 글자('토'). 없으면 예보 기간 전체"},
+         "start_hour": {"type": "integer", "description": "원하는 시작 시각(0~23). 예: '오늘 저녁'이면 18"},
+         "end_hour": {"type": "integer", "description": "원하는 시간대의 끝 시각(1~24)"},
+         "battery_percent": {"type": "number", "description": "전기차 현재 배터리 %. '반쯤'=50, 모르면 비움"},
+         "car": {"type": "string", "description": "전기차 차종 (예: 아이오닉5, 레이). 모르면 비움"},
+         "fuel": {"type": "string", "description": "보일러 연료: '전기' 또는 '기름·가스'. 사용자가 말하지 않았으면 비움"}}}},
     {"name": "how_to_act", "description": "잉여 시간에 맞춰 전기를 쓰려면 실제로 무엇을 하면 되는지(예약 기능, 피할 시간, 요금제 문의) 단계별로 알려 준다.",
      "parameters": {"type": "object", "properties": {
          "target": {"type": "string", "enum": ["가전", "전기차"], "default": "전기차"}}}},
