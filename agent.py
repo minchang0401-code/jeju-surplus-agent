@@ -58,6 +58,8 @@ def _system_prompt() -> str:
   (예: "내일은 가능성이 낮아요. 일요일 낮 12시~오후 2시는 '보통'이라 더 나아요.").
 - 전기차는 배터리가 몇 % 남았는지만 물을 수 있다(ask_user). 보일러는 ask_user 질문을 그대로 묻고,
   기름·가스 보일러라고 하면 fuel 을 넣어 다시 불러 support_program 을 안내한다.
+- 사용자가 출근·외출 일정을 말하면(예: '9시 출근 6시 퇴근') away_start·away_end 로 넣는다. 결과의 schedule 을 보고,
+  예약 기능이 있는 기기는 집에 없어도 낮에 돌릴 수 있다고 알려 주고, 전기차는 '회사 근처 충전소에서 낮에'와 '집에서'를 나눠 말한다.
 - shift 가 '불가'·'낮음'인 기기는 억지로 시간을 옮기라고 하지 않고 도구의 how 를 전한다.
 - 질문에 딱 맞는 도구만 부른다. 묻지 않은 예보·충전 습관을 덧붙이지 않는다.
 - 어르신도 알아듣게 짧고 쉬운 말로, 3~6문장으로 답한다. 시간은 '낮 12시~오후 2시'처럼 말한다.
@@ -215,6 +217,10 @@ _FUEL_WORDS = ("기름", "가스", "석유", "등유", "lpg")
 def _guess_time(question: str) -> tuple[int | None, int | None]:
     """'오늘 저녁', '밤에', '오후 3시' → (시작 시각, 끝 시각). 없으면 (None, None)."""
     q = question.replace(" ", "")
+    # 출퇴근·외출 시각은 '쓰고 싶은 때'가 아니므로 빼고 봄 (_guess_away 가 따로 처리)
+    q = re.sub(r"(오전|오후)?\d{1,2}시(?:에|까지)?(출근|퇴근)", "", q)
+    q = re.sub(r"(오전|오후)?\d{1,2}시부터(오전|오후)?\d{1,2}시까지", "", q)
+    q = q.replace("출근", "").replace("퇴근", "")
     m = re.search(r"(오전|오후|저녁|밤|낮|아침|새벽)?(\d{1,2})시", q)
     if m:
         h = int(m.group(2))
@@ -227,6 +233,30 @@ def _guess_time(question: str) -> tuple[int | None, int | None]:
         if any(w.replace(" ", "") in q for w in words):
             return rng
     return None, None
+
+
+def _guess_away(question: str) -> dict:
+    """'9시 출근 6시 퇴근', '10시부터 4시까지 외출' → 집에 없는 시간. 없으면 {}."""
+    q = question.replace(" ", "")
+
+    def hour(s: str, pm_if_small: bool) -> int:
+        h = int(s)
+        return h + 12 if pm_if_small and h < 9 else h
+    go = re.search(r"(\d{1,2})시(?:에|까지)?출근", q)
+    back = re.search(r"(\d{1,2})시(?:에)?퇴근", q)
+    if go or back or "출근" in q or "회사" in q:
+        s = int(go.group(1)) if go else 9
+        e = hour(back.group(1), True) if back else 18
+        return {"away_start": s, "away_end": e, "away_weekdays_only": True,
+                "assumed": not (go and back)}
+    m = re.search(r"(오전|오후)?(\d{1,2})시부터(오전|오후)?(\d{1,2})시까지", q)
+    if m and any(w in q for w in ("외출", "나가", "집에없", "밖에", "일하", "약속")):
+        s = int(m.group(2)) + (12 if m.group(1) == "오후" and int(m.group(2)) < 12 else 0)
+        e = int(m.group(4))
+        if m.group(3) == "오후" or (m.group(1) == "오후" and not m.group(3)) or e <= s:
+            e = e + 12 if e < 12 else e
+        return {"away_start": s, "away_end": min(e, 24), "away_weekdays_only": False, "assumed": False}
+    return {}
 
 
 def _guess_battery(question: str) -> float | None:
@@ -327,6 +357,9 @@ def _route(question: str) -> list[tuple[str, dict]]:
         if when and has("전기차", "충전", "ev"):   # '이번 주에 충전하면 뭐가 좋아?' → 이번 주 좋은 시간 + 이득
             steps.insert(0, ("recommend_actions", {"target": "전기차", "day": day}))
         return steps
+    if (has("출력제어") and has("얼마", "몇", "횟수", "버려", "기록", "많이")) or has(
+            "연계선", "hvdc", "육지로", "역송", "플러스dr", "버려지", "버려진", "버리는", "버린", "전력수요", "수요가"):
+        return [("grid_records", {})]
     if has("태양광", "풍력", "발전소", "설비", "메가와트", "mw"):
         return [("explain_surplus", {})]
     if has("왜", "이유", "원인", "출력제어", "smp", "무슨뜻", "어떻게생", "왜생", "생기는이유") or (has("뭐야", "뭔가요", "뭐예요") and has("잉여", "전기", "smp", "출력")):
@@ -337,9 +370,10 @@ def _route(question: str) -> list[tuple[str, dict]]:
     if small:
         return [("plan_appliance_use", {"appliance": question, "day": day})]
     if not small and has("전기차", "충전", "ev", "배터리") and (
-            _guess_battery(question) is not None or _guess_car(question) or has("배터리")):
+            _guess_battery(question) is not None or _guess_car(question) or has("배터리", "출근", "퇴근")):
         sh, eh = _guess_time(question)
         args = {"appliance": "전기차", "day": day, "battery_percent": _guess_battery(question), "car": _guess_car(question)}
+        args.update({k: v for k, v in _guess_away(question).items() if k != "assumed"})
         if sh is not None:
             args["start_hour"] = sh
         if eh is not None:
@@ -365,6 +399,7 @@ def _route(question: str) -> list[tuple[str, dict]]:
         steps = []
         for key in (find_all(question) or [question])[:3]:   # '빨래랑 식기세척기' → 기기마다 하나씩
             args = {"appliance": key if key != question else question, "day": day, "question": question}
+            args.update({k: v for k, v in _guess_away(question).items() if k != "assumed"})
             if sh is not None:
                 args["start_hour"] = sh
             if eh is not None:
@@ -437,6 +472,14 @@ def _plan_text(r: dict) -> str:
         lines.append(f"- {r['not_forecast']}")
         lines.append(f"- {r['how']}")
         return "\n".join(lines)
+    sc = r.get("schedule")
+    if sc:
+        lines.append(f"- 집에 없는 시간 {sc['away']}을 반영했어요. {sc['note']}")
+        if name == "전기차":
+            for label, ws in (("밖에 있는 동안 (회사·목적지 근처 충전소)", sc.get("while_away")), ("집에 있을 때", sc.get("at_home"))):
+                if ws:
+                    w = ws[0]
+                    lines.append(f"  - {label}: {_day_text(w['date'], w['weekday'])} {w['time_text']} (가능성 {w['level']})")
     if r["shift"] == "낮음":
         lines.append(f"- {r['how']}")
         wins = r.get("alternatives") or r.get("best_windows") or []
@@ -496,6 +539,20 @@ def _template(name: str, r: dict) -> str:
         return "\n".join(lines)
     if name == "plan_appliance_use":
         return _plan_text(r)
+    if name == "grid_records":
+        c, d, p = r["curtailment"], r["demand_hvdc"], r["plus_dr"]
+        top = max(c["wind_mwh_by_year"].items(), key=lambda kv: kv[1])
+        return "\n".join([
+            f"- 버려진 바람 전기: {c['wind_period']} 동안 제주 풍력발전을 {c['wind_days']}일 멈추게 했고, 버려진 전기는 모두 "
+            f"약 {c['wind_mwh_total']:,}MWh예요(가장 많았던 해 {top[0]}년 {top[1]:,}MWh). 그중 {c['wind_share_10_16']:.0%}가 오전 10시~오후 4시였어요.",
+            f"- 태양광도 {c['solar_period']} 동안 {c['solar_days']}일 출력제어를 했고, 대부분 3~5월과 10월 한낮이었어요.",
+            f"- 2026년 1~9월에 잉여(전기 가격 0원 이하)가 생긴 날은 낮 11시~오후 2시 전력수요가 평균 {d['midday_demand_mw']['잉여 있는 날']}MW로 "
+            f"다른 날({d['midday_demand_mw']['다른 날']}MW)보다 적었고, 육지에서 받는 전기도 {d['midday_hvdc_import_mw']['잉여 있는 날']}MW로 "
+            f"평소({d['midday_hvdc_import_mw']['다른 날']}MW)보다 훨씬 적었어요.",
+            f"- 같은 기간 제주가 오히려 육지로 전기를 보낸(역송) 시간이 {d['reverse_hours']}시간 있었고, 주로 봄(2~5월) 낮이었어요.",
+            f"- 플러스 DR(남을 때 전기를 더 쓰면 보상): 2021~2023년 실적이 해마다 늘어 2023년에는 {p['by_year'][2023]['발령일']}일, "
+            f"{p['by_year'][2023]['증대량_MWh']}MWh였어요. 주로 기업·기관이 참여하는 제도예요.",
+            "- 이 도우미는 이렇게 버려지던 낮 시간 전기를 가정의 빨래·충전으로 쓰자는 것이에요."])
     if name == "how_to_act":
         return "- 이렇게 해 보세요:\n" + "\n".join(f"  {i}. {t}" for i, t in enumerate(r["steps"], 1))
     if name == "find_chargers":

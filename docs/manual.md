@@ -75,7 +75,7 @@ pip install -r requirements.txt
 | 4 | `python collect_weather.py history` | `data/weather_jeju_hourly.csv` (과거 관측) | 수 분 |
 | 5 | `python train.py` | `models/`, `reports/report.md`, `reports/metrics.json` | 1분 이내 |
 | 6 | `python collect_weather.py forecast` | `data/forecast_jeju_hourly.csv` (최신 단기예보) | 수 초 |
-| 7 | `python run_scenarios.py` | `reports/scenario_results.md` (시나리오 5개 + 질문 52개 + 이어지는 질문 8개 + 생활 언어 답변 7개) | 수 초 |
+| 7 | `python run_scenarios.py` | `reports/scenario_results.md` (시나리오 5개 + 질문 58개 + 이어지는 질문 8개 + 생활 언어 답변 9개) | 수 초 |
 | 8 | `python -m streamlit run app.py` | 브라우저에 화면 (http://localhost:8501) | — |
 
 - 1~5는 이미 결과가 들어 있으니 건너뛰어도 됩니다.
@@ -83,11 +83,11 @@ pip install -r requirements.txt
 - `streamlit` 대신 꼭 `python -m streamlit`으로 실행하세요. 다른 Python에 깔린 streamlit이 잡히는 일을 막습니다.
 
 ## 5. 결과 확인
-- **화면:** 5일 예보 카드(높음·보통·낮음), 빠른 질문 3개, 대화창, '근거 보기'(어떤 도구·데이터를 썼는지)
+- **화면:** 5일 예보 카드(높음·보통·낮음), '🗺️ 지도로 보기'(충전소·풍력발전소, '급속 충전소만 보기' 스위치), 빠른 질문 3개, 대화창, '근거 보기'(어떤 도구·데이터를 썼는지, 표·그래프·지도)
 - **사이드바:** 데이터 준비 상태, AI 연결 상태, 기상청 예보 발표 시각
 - **성능:** `reports/report.md` (시험 기간 2026-01-01 이후, 학습에 쓰지 않은 기간)
 - **결과 설명:** `docs/result_report.md`
-- **그림:** `reports/figures/` (그림 1·2는 실제 데이터. 3·4는 사전 실험용 Open-Meteo 데이터)
+- **그림:** `reports/figures/` — 결과 설명자료 그림은 `report_1`~`report_6` (실제 데이터·결과, `python experiments/make_report_figures.py`로 다시 그림). `fig1`~`fig4`는 사전 실험 그림(3·4는 Open-Meteo 데이터)
 
 ## 6. 오류·제약사항
 | 증상 | 원인·해결 |

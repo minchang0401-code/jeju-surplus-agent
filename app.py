@@ -11,7 +11,7 @@ import streamlit as st
 
 from agent import ask, llm_status
 from collect_weather import refresh_forecast_if_stale
-from tools import data_status, explain_surplus, forecast_surplus
+from tools import data_status, explain_surplus, forecast_surplus, map_points
 
 # 클라우드(Streamlit Community Cloud)에서는 키를 .env 대신 앱 설정의 Secrets 에 넣음 → 환경변수로 옮김
 try:
@@ -62,6 +62,24 @@ try:
 except FileNotFoundError:
     st.error("학습된 모델이 없습니다. 먼저 `python train.py` 를 실행하세요.")
 
+# ---------------------------------------------------------------- 지도 (팀원 B 대시보드의 지도 아이디어)
+@st.cache_data(ttl=86400, show_spinner=False)
+def _map_points(quick_only: bool) -> pd.DataFrame:
+    return map_points(quick_only)
+
+
+with st.expander("🗺️ 지도로 보기 — 충전소와 풍력발전소"):
+    quick_only = st.toggle("급속 충전소만 보기", value=False)
+    pts = _map_points(quick_only)
+    if len(pts):
+        st.map(pts, latitude="lat", longitude="lon", color="color", size="size", zoom=9)
+        n = pts["종류"].value_counts()
+        st.caption(f"🔵 급속 충전소 {n.get('급속 충전소', 0):,}곳 · ⚪ 완속 충전소 {n.get('완속 충전소', 0):,}곳 · "
+                   f"🟠 풍력발전소 {n.get('풍력발전소', 0)}곳(원 크기 = 설비용량, 위치는 리 단위 대략값) · "
+                   "출처: 제주데이터허브 862, 제주특별자치도 풍력발전현황(허브 472)")
+    else:
+        st.info("지도에 표시할 데이터가 없어요.")
+
 # ---------------------------------------------------------------- 대화
 st.divider()
 if "history" not in st.session_state:
@@ -104,7 +122,22 @@ for q, res in st.session_state.history:
                                          "잉여 시간 비중": pd.Series(r["surplus_hour_share"])}).fillna(0)
                     st.line_chart(both)
                 elif t["tool"] == "find_chargers" and r.get("chargers"):
-                    st.dataframe(pd.DataFrame(r["chargers"]), hide_index=True)
+                    cdf = pd.DataFrame(r["chargers"])
+                    if {"lat", "lon"} <= set(cdf.columns):
+                        mp = cdf[["lat", "lon"]].assign(color=cdf["has_quick"].map({True: "#2a78d6", False: "#9a9a96"}),
+                                                         size=40.0)
+                        if r.get("center"):
+                            mp = pd.concat([mp, pd.DataFrame([{**r["center"], "color": "#eb6834", "size": 70.0}])],
+                                           ignore_index=True)
+                        st.map(mp, latitude="lat", longitude="lon", color="color", size="size", zoom=13)
+                        st.caption("🔵 급속 있음 · ⚪ 완속만 · 🟠 찾은 동네 중심")
+                    st.dataframe(cdf.drop(columns=[c for c in ("lat", "lon") if c in cdf.columns]), hide_index=True)
+                elif t["tool"] == "grid_records" and "curtailment" in r:
+                    h = pd.Series(r["curtailment"]["wind_mwh_by_hour"]).rename(index=lambda x: f"{int(x):02d}시")
+                    st.bar_chart(h, y_label="풍력 출력제어량(MWh)")
+                    d = r["demand_hvdc"]
+                    st.dataframe(pd.DataFrame({"낮 전력수요(MW)": d["midday_demand_mw"],
+                                               "육지에서 받는 전기(MW)": d["midday_hvdc_import_mw"]}))
                 elif t["tool"] == "llm_error":
                     st.warning("AI(LLM) 연결 오류 — 그래서 규칙 기반으로 답했어요: " + str(r.get("error", "")))
                 elif t["tool"] == "plan_appliance_use" and (r.get("alternatives") or r.get("best_windows")):

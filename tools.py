@@ -225,7 +225,8 @@ def find_chargers(area: str = "", quick_only: bool = False, limit: int = 5, radi
     for _, r in g.head(limit).iterrows():
         name = str(r["chargingPlace"])
         item = {"name": name, "quick_count": int(r["quick"]), "slow_count": int(r["slow"]),
-                "has_quick": bool(r["has_quick"]), "parking_fee": bool(r["parking_fee"])}
+                "has_quick": bool(r["has_quick"]), "parking_fee": bool(r["parking_fee"]),
+                "lat": round(float(r["lat"]), 5), "lon": round(float(r["lon"]), 5)}
         if "distance_km" in r:
             item["distance_km"] = float(r["distance_km"])
         hit = crowd[crowd["station"].apply(lambda s: s in name or name in s)] if crowd is not None else None
@@ -235,7 +236,34 @@ def find_chargers(area: str = "", quick_only: bool = False, limit: int = 5, radi
     src = ["제주데이터허브 862 전기자동차 충전소 정보 (기준일 " + str(st["baseDate"].iloc[0]) + ")"]
     if crowd is not None:
         src.append("제주데이터허브 1225 일별 전기자동차 충전 이력")
-    return {"area": area, "search": how, "count": int(len(g)), "chargers": rows, "sources": src}
+    out = {"area": area, "search": how, "count": int(len(g)), "chargers": rows, "sources": src}
+    if area in PLACE_COORDS:
+        out["center"] = {"lat": PLACE_COORDS[area][0], "lon": PLACE_COORDS[area][1]}
+    return out
+
+
+def map_points(quick_only: bool = False) -> pd.DataFrame:
+    """화면 지도용 점: 충전소(허브 862, 장소 단위) + 풍력발전소(위치는 리 단위 대략값, 팀원 B 정리).
+    색: 파랑=급속 있는 충전소, 회색=완속만, 주황=풍력발전소(크기=설비용량)."""
+    pts = []
+    st_ = _hub_csv(862)
+    if st_ is not None:
+        df = st_.copy()
+        df["lat"] = pd.to_numeric(df["latitude"], errors="coerce")
+        df["lon"] = pd.to_numeric(df["longitude"], errors="coerce")
+        df = df[df["lat"].between(33.1, 34.0) & df["lon"].between(126.1, 127.0)]
+        df["q"] = df["quickChargingFlag"].astype(str).str.lower().isin(["true", "1", "y"])
+        g = df.groupby("chargingPlace").agg(lat=("lat", "mean"), lon=("lon", "mean"), q=("q", "max")).reset_index()
+        if quick_only:
+            g = g[g["q"]]
+        pts.append(pd.DataFrame({"lat": g["lat"], "lon": g["lon"], "종류": g["q"].map({True: "급속 충전소", False: "완속 충전소"}),
+                                 "color": g["q"].map({True: "#2a78d6", False: "#9a9a96"}), "size": 60.0}))
+    wf = DATA / "grid_raw" / "jeju_wind_farms_approx.csv"
+    if wf.exists():
+        w = pd.read_csv(wf)
+        pts.append(pd.DataFrame({"lat": w["lat_approx"], "lon": w["lon_approx"], "종류": "풍력발전소",
+                                 "color": "#eb6834", "size": 300.0 + pd.to_numeric(w["설비용량_MW"], errors="coerce").fillna(0) * 25}))
+    return pd.concat(pts, ignore_index=True) if pts else pd.DataFrame(columns=["lat", "lon", "종류", "color", "size"])
 
 
 def _crowding() -> pd.DataFrame | None:
@@ -463,7 +491,8 @@ def _hour_label_text(start_hour: int, length: int) -> str:
 
 
 def plan_appliance_use(appliance: str = "", day: str = "", start_hour: int | None = None, end_hour: int | None = None,
-                       battery_percent: float | None = None, car: str = "", fuel: str = "", question: str = "") -> dict:
+                       battery_percent: float | None = None, car: str = "", fuel: str = "", question: str = "",
+                       away_start: int | None = None, away_end: int | None = None, away_weekdays_only: bool = True) -> dict:
     """기기 이름(또는 질문 문장)으로 걸리는 시간·전력량을 정하고, 예보에서 남는 전기가 가장 많은 연속 시간대를 찾음.
     day: 'YYYY-MM-DD' 또는 요일 한 글자('토') 또는 '' (예보 기간 전체)
     start_hour/end_hour: 사용자가 원하는 시간대(시작 시각 기준 0~24). 주면 그 시간대도 따로 평가함."""
@@ -555,6 +584,28 @@ def plan_appliance_use(appliance: str = "", day: str = "", start_hour: int | Non
         return best
 
     usable = [c for c in cands if DEFAULT_EARLIEST <= c["start_hour"] and c["end_hour"] <= DEFAULT_LATEST]
+    # --- 일정(출근·외출) 반영 — 팀원 C(TIMEFLOW)의 '시간 제약 안에서 계획' 방식
+    if away_start is not None and away_end is not None:
+        a0, a1 = int(away_start), int(away_end)
+        wd_only = bool(away_weekdays_only)
+
+        def away(c):   # 그 시간대에 집에 없는지
+            if wd_only and "월화수목금토일".index(c["weekday"]) >= 5:
+                return False
+            return c["start_hour"] < a1 and c["end_hour"] > a0
+        sched = {"away": f"{a0}시~{a1}시" + (" (평일)" if wd_only else ""),
+                 "reservable": bool(a.get("reserve"))}
+        if key == "전기차":
+            # 차는 사람과 함께 움직임 → 밖에 있는 동안은 그곳(회사 근처) 충전소, 집에서는 집에 있는 시간에만
+            sched["while_away"] = top3([c for c in usable if away(c)])
+            sched["at_home"] = top3([c for c in usable if not away(c)])
+            sched["note"] = ("나가 있는 동안에는 회사·목적지 근처 공용 충전소에서, 집 충전기는 집에 있는 시간에만 쓸 수 있어요.")
+        elif a.get("reserve"):
+            sched["note"] = "예약·타이머 기능이 있어 집에 없어도 남는 전기 시간에 돌아가게 할 수 있어요."
+        else:
+            usable = [c for c in usable if not away(c)]
+            sched["note"] = "집에 있을 때 직접 켜야 하는 기기라, 나가 있는 시간은 빼고 찾았어요."
+        out["schedule"] = sched
     out["length_hours"] = length
     out["best_windows"] = top3(usable)
     want_alt = bool(day and not out["best_windows"]) or (start_hour is not None and int(start_hour) >= 16)
@@ -602,10 +653,23 @@ def plan_appliance_use(appliance: str = "", day: str = "", start_hour: int | Non
     return out
 
 
+# ---------------------------------------------------------------- ⑪ 전력 계통 기록 (출력제어·연계선·수요·플러스 DR)
+def grid_records() -> dict:
+    """버려진 재생에너지(출력제어), 육지로 보낸 전기(연계선 역송), 잉여 날의 낮 수요, 플러스 DR 실적.
+    팀원 B 가 공공데이터포털에서 받은 한국전력거래소 파일로 계산."""
+    import grid
+    if not grid.available():
+        return {"error": "전력 계통 기록 파일(data/grid_raw)이 없어요.", "sources": []}
+    out = dict(grid.grid_stats())
+    out["sources"] = list(grid.SOURCES.values()) + ["EPSIS 제주 시간별 SMP(잉여 정답)"]
+    return out
+
+
 TOOLS = {
     "explain_benefits": explain_benefits,
     "how_to_act": how_to_act,
     "plan_appliance_use": plan_appliance_use,
+    "grid_records": grid_records,
     "forecast_surplus": forecast_surplus,
     "recommend_actions": recommend_actions,
     "find_chargers": find_chargers,
@@ -651,7 +715,15 @@ TOOL_SPECS = [
          "end_hour": {"type": "integer", "description": "원하는 시간대의 끝 시각(1~24)"},
          "battery_percent": {"type": "number", "description": "전기차 현재 배터리 %. '반쯤'=50, 모르면 비움"},
          "car": {"type": "string", "description": "전기차 차종 (예: 아이오닉5, 레이). 모르면 비움"},
-         "fuel": {"type": "string", "description": "보일러 연료: '전기' 또는 '기름·가스'. 사용자가 말하지 않았으면 비움"}}}},
+         "fuel": {"type": "string", "description": "보일러 연료: '전기' 또는 '기름·가스'. 사용자가 말하지 않았으면 비움"},
+         "away_start": {"type": "integer", "description": "사용자가 집에 없는 시작 시각(0~23). 예: '9시 출근' → 9"},
+         "away_end": {"type": "integer", "description": "집에 돌아오는 시각(1~24). 예: '6시 퇴근'·'18시 퇴근' → 18"},
+         "away_weekdays_only": {"type": "boolean", "description": "출근처럼 평일에만 집에 없으면 true(기본), 그날만 외출이면 false"}}}},
+    {"name": "grid_records", "description": "제주 전력 계통 기록을 돌려준다: 남아서 버려진 재생에너지(풍력 출력제어 MWh·횟수, 태양광 출력제어 횟수, "
+     "2021~2024), 잉여가 생긴 날 낮의 전력수요와 육지에서 받는 전기(연계선 HVDC, 2026년 1~9월, 역송 시간), "
+     "플러스 DR(남을 때 더 쓰면 보상) 실적(2021~2023). '출력제어 얼마나 했어?', '버려지는 전기가 얼마야?', "
+     "'육지로 전기 보내?', '플러스 DR이 뭐야?' 같은 질문에 쓴다.",
+     "parameters": {"type": "object", "properties": {}}},
     {"name": "how_to_act", "description": "잉여 시간에 맞춰 전기를 쓰려면 실제로 무엇을 하면 되는지(예약 기능, 피할 시간, 요금제 문의) 단계별로 알려 준다.",
      "parameters": {"type": "object", "properties": {
          "target": {"type": "string", "enum": ["가전", "전기차"], "default": "전기차"}}}},
