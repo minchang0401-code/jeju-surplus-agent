@@ -1,0 +1,151 @@
+{
+  "meta": {
+    "trained_at": "2026-11-18T13:43:41",
+    "label_source": "smp_jeju_hourly.csv",
+    "feature_sets": {
+      "calendar": [
+        "month",
+        "doy_sin",
+        "doy_cos",
+        "dow",
+        "is_weekend",
+        "is_holiday",
+        "is_offday",
+        "hour",
+        "hour_sin",
+        "hour_cos",
+        "recent_surplus_days",
+        "recent_surplus_hours_same_hour"
+      ],
+      "full": [
+        "month",
+        "doy_sin",
+        "doy_cos",
+        "dow",
+        "is_weekend",
+        "is_holiday",
+        "is_offday",
+        "hour",
+        "hour_sin",
+        "hour_cos",
+        "recent_surplus_days",
+        "recent_surplus_hours_same_hour",
+        "w_ta",
+        "w_ws",
+        "w_sky",
+        "w_rain",
+        "wd_mid_sky",
+        "wd_mid_ws",
+        "wd_night_ws",
+        "wd_mean_ta",
+        "wd_rain_hours",
+        "hub_day_avg_temp",
+        "hub_day_max_temp",
+        "hub_day_rain",
+        "hub_day_avg_wind"
+      ]
+    },
+    "data_period": [
+      "2024-06-06",
+      "2026-11-17"
+    ],
+    "test_period": [
+      "2026-01-01",
+      "2026-11-17"
+    ],
+    "total_surplus_hours": 339,
+    "test_surplus_hours": 133,
+    "thresholds": {
+      "calendar": 0.35,
+      "full": 0.39999999999999997
+    },
+    "model_params": {
+      "max_iter": 300,
+      "learning_rate": 0.05,
+      "max_leaf_nodes": 15,
+      "min_samples_leaf": 120,
+      "l2_regularization": 1.0,
+      "random_state": 42
+    }
+  },
+  "results": {
+    "calendar_static": {
+      "hour_pr_auc": 0.2562978349926532,
+      "hour_brier": 0.016349884927483647,
+      "hour_precision": 0.28888888888888886,
+      "hour_recall": 0.2932330827067669,
+      "day_pr_auc": 0.39047312827495506,
+      "day_precision": 0.4,
+      "day_recall": 0.37735849056603776,
+      "day_base_rate": 0.16510903426791276,
+      "threshold": 0.35,
+      "days": 321,
+      "surplus_days": 53
+    },
+    "calendar_monthly_retrain": {
+      "hour_pr_auc": 0.25059867498343924,
+      "hour_brier": 0.01642037152917687,
+      "hour_precision": 0.2702702702702703,
+      "hour_recall": 0.22556390977443608,
+      "day_pr_auc": 0.36246488406125327,
+      "day_precision": 0.39215686274509803,
+      "day_recall": 0.37735849056603776,
+      "day_base_rate": 0.16510903426791276,
+      "threshold": 0.35,
+      "days": 321,
+      "surplus_days": 53
+    },
+    "full_static": {
+      "hour_pr_auc": 0.5211846019576143,
+      "hour_brier": 0.01102314262649344,
+      "hour_precision": 0.6,
+      "hour_recall": 0.45112781954887216,
+      "day_pr_auc": 0.6244359602587126,
+      "day_precision": 0.675,
+      "day_recall": 0.5094339622641509,
+      "day_base_rate": 0.16510903426791276,
+      "threshold": 0.39999999999999997,
+      "days": 321,
+      "surplus_days": 53
+    },
+    "full_monthly_retrain": {
+      "hour_pr_auc": 0.5683496153010559,
+      "hour_brier": 0.010437904811903199,
+      "hour_precision": 0.6272727272727273,
+      "hour_recall": 0.518796992481203,
+      "day_pr_auc": 0.6508903730307702,
+      "day_precision": 0.6530612244897959,
+      "day_recall": 0.6037735849056604,
+      "day_base_rate": 0.16510903426791276,
+      "threshold": 0.39999999999999997,
+      "days": 321,
+      "surplus_days": 53
+    },
+    "baseline_climatology": {
+      "hour_pr_auc": 0.23859767583006675,
+      "hour_brier": 0.015077290081799012,
+      "hour_precision": 0.2931937172774869,
+      "hour_recall": 0.42105263157894735,
+      "day_pr_auc": 0.32177395972979383,
+      "day_precision": 0.3291139240506329,
+      "day_recall": 0.49056603773584906,
+      "day_base_rate": 0.16510903426791276,
+      "threshold": 0.35,
+      "days": 321,
+      "surplus_days": 53
+    },
+    "baseline_rule": {
+      "hour_pr_auc": 0.16341266839824556,
+      "hour_brier": 0.06542056074766354,
+      "hour_precision": 0.18927973199329984,
+      "hour_recall": 0.849624060150376,
+      "day_pr_auc": 0.252840940138298,
+      "day_precision": 0.2562814070351759,
+      "day_recall": 0.9622641509433962,
+      "day_base_rate": 0.16510903426791276,
+      "threshold": 0.5,
+      "days": 321,
+      "surplus_days": 53
+    }
+  }
+}
