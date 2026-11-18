@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from config import (DATA, FORECAST_HOURLY_CSV, HUB_DATA, HUB_FILE_DIRS, HUB_WEATHER_DAILY_CSV,
+from config import (MAX_HORIZON_DAYS, DATA, FORECAST_HOURLY_CSV, HUB_DATA, HUB_FILE_DIRS, HUB_WEATHER_DAILY_CSV,
                     MODELS, PREDICTION_LOG, SMP_HOURLY_CSV, WEATHER_HOURLY_CSV)
 from facts import FACTS
 from features import load_labels
@@ -63,23 +63,57 @@ def _hours_text(hours: list[int]) -> str:
 
 
 # ---------------------------------------------------------------- ① 잉여 예보
+def _past_month_rate(months: set[int]) -> dict:
+    """과거(정답 데이터 전체 기간) 월별 잉여일 비율 — 예보가 아니라 참고용."""
+    lab = load_labels()
+    day = lab.groupby("date")["is_surplus"].max()
+    rate = day.groupby(day.index.month).mean()
+    return {f"{m}월": round(float(rate.get(m, 0.0)), 3) for m in sorted(months)}
+
+
 def forecast_surplus(days: int = 5, start: str | None = None) -> dict:
+    """start(없으면 내일)부터 days 일. 예보는 오늘~MAX_HORIZON_DAYS 일 뒤까지만 함.
+    범위 밖 날짜는 예보하지 않고 'not_forecast' 에 담아 과거 같은 달 잉여일 비율(참고)만 줌."""
     from predict import forecast, summarize
-    fc = forecast(start, days)
-    summ = summarize(fc)
-    out = []
-    for _, r in summ.iterrows():
-        out.append({
-            "date": r["date"], "weekday": r["weekday"], "level": r["level"],
-            "max_prob": r["max_prob"], "likely_hours": r["likely_hours"],
-            "likely_time_text": _hours_text(r["likely_hours"]) or "가능성 높은 시간 없음",
-            "model": "날씨 반영" if r["model_used"] == "full" else "달력·최근 경향(날씨 미반영)",
-        })
-    sources = ["EPSIS 제주 시간별 SMP(학습 정답)"]
-    if (fc["model_used"] == "full").any():
-        sources += ["기상청 단기예보", "제주데이터허브 579 일별 기상(학습)"]
-    return {"forecast": out, "sources": sources,
-            "note": "확률이 20% 이상인 시간을 '가능성 있는 시간'으로 표시합니다. 예보는 확률이며 틀릴 수 있습니다."}
+    today = date.today()
+    last = today + timedelta(days=MAX_HORIZON_DAYS)
+    try:
+        s = pd.Timestamp(start).date() if start else today + timedelta(days=1)
+    except (ValueError, TypeError):
+        return {"error": f"날짜를 이해하지 못했어요: {start}", "sources": []}
+    days = max(1, int(days or 5))
+    wanted = [s + timedelta(days=i) for i in range(days)]
+    past = [d for d in wanted if d < today]
+    inside = [d for d in wanted if today <= d <= last]
+    outside = [d for d in wanted if d > last]
+    out, sources = [], ["EPSIS 제주 시간별 SMP(학습 정답)"]
+    if inside:
+        fc = forecast(str(inside[0]), len(inside))
+        summ = summarize(fc)
+        for _, r in summ.iterrows():
+            full = r["model_used"] == "full"
+            out.append({
+                "date": r["date"], "weekday": r["weekday"], "level": r["level"],
+                "max_prob": r["max_prob"], "likely_hours": r["likely_hours"],
+                "likely_time_text": _hours_text(r["likely_hours"]) or "가능성 높은 시간 없음",
+                "basis": "기상청 단기예보 반영" if full else "날씨 미반영(달력·최근 경향만) — 참고치",
+            })
+        if (fc["model_used"] == "full").any():
+            sources += ["기상청 단기예보", "제주데이터허브 579 일별 기상(학습)"]
+    res = {"forecast": out, "sources": sources,
+           "forecast_range": f"{today:%Y-%m-%d} ~ {last:%Y-%m-%d} (오늘부터 {MAX_HORIZON_DAYS}일 뒤까지)",
+           "note": "확률이 20% 이상인 시간을 '가능성 있는 시간'으로 표시합니다. 예보는 확률이며 틀릴 수 있습니다."}
+    if outside:
+        res["not_forecast"] = {
+            "dates": f"{outside[0]:%Y-%m-%d} ~ {outside[-1]:%Y-%m-%d}",
+            "reason": "예보 범위 밖이라 예보할 수 없음",
+            "past_surplus_day_rate_same_month": _past_month_rate({d.month for d in outside}),
+            "past_note": "과거 같은 달에 잉여가 생긴 날의 비율일 뿐, 그 날짜의 예보가 아님",
+        }
+    if past:
+        res["past_dates"] = {"dates": f"{past[0]:%Y-%m-%d} ~ {past[-1]:%Y-%m-%d}",
+                             "reason": "이미 지난 날짜 — 예보가 아니라 check_past_forecast 로 실제와 비교 가능"}
+    return res
 
 
 # ---------------------------------------------------------------- ② 행동 추천
@@ -87,10 +121,22 @@ def recommend_actions(target: str = "가전", days: int = 5, day: str = "") -> d
     """day: 특정 날만 보고 싶을 때 요일('토') 또는 날짜('2026-11-21')."""
     fres = forecast_surplus(days)
     fc = fres["forecast"]
-    if day:
-        fc = [d for d in fc if day in (d["weekday"], d["date"])] or fc
-    good = sorted([d for d in fc if d["level"] in ("높음", "보통")], key=lambda d: -d["max_prob"])
     tips = []
+    if day:
+        hit = [d for d in fc if day in (d["weekday"], d["date"])]
+        if not hit:   # 예보 범위 밖 날짜·요일 → 다른 날 목록으로 바꿔치기하지 않고 솔직하게 알림
+            other = forecast_surplus(1, day) if len(day) == 10 else {}
+            rng = fres["forecast_range"].split(" (")[0]
+            what = f"{day}요일" if len(day) == 1 else day
+            msg = (f"{what}은(는) 예보할 수 있는 기간({rng}) 밖이라 "
+                   "언제가 좋을지 미리 알 수 없어요. 가까워지면 다시 물어봐 주세요.")
+            res = {"target": target, "day": day, "forecast_used": [], "tips": [msg],
+                   "forecast_range": fres["forecast_range"], "sources": fres["sources"]}
+            if other.get("not_forecast"):
+                res["not_forecast"] = other["not_forecast"]
+            return res
+        fc = hit
+    good = sorted([d for d in fc if d["level"] in ("높음", "보통")], key=lambda d: -d["max_prob"])
     if day and len(fc) == 1 and not good:
         d = fc[0]
         tips.append(f"{d['date']}({d['weekday']})는 재생에너지가 남을 가능성이 낮아요({d['max_prob']:.0%}). "
@@ -98,8 +144,9 @@ def recommend_actions(target: str = "가전", days: int = 5, day: str = "") -> d
     elif good:
         for d in good[:3]:
             what = "전기차 충전" if target == "전기차" else "세탁기·식기세척기·건조기 같은 큰 가전"
+            ref = " (날씨 미반영 참고치)" if d.get("basis", "").startswith("날씨 미반영") else ""
             tips.append(f"{d['date']}({d['weekday']}) {d['likely_time_text']}: 재생에너지가 남을 가능성 "
-                        f"{d['level']}({d['max_prob']:.0%}) → {what}을 이 시간에")
+                        f"{d['level']}({d['max_prob']:.0%}){ref} → {what}을 이 시간에")
     else:
         tips.append("앞으로 며칠은 재생에너지가 남을 가능성이 낮아요. 이번에는 시간 이동 효과가 크지 않습니다.")
     tips.append("저녁 4~10시는 제주 계시별 요금의 최대부하 시간이라, 계시별 요금 가입 가구는 이 시간을 피하면 요금이 줄어요.")
@@ -419,10 +466,11 @@ TOOLS = {
 }
 
 TOOL_SPECS = [
-    {"name": "forecast_surplus", "description": "앞으로 며칠 동안 제주 재생에너지 잉여전력이 생길 가능성(날짜·시간대별)을 예보한다.",
+    {"name": "forecast_surplus", "description": "제주 재생에너지 잉여전력이 생길 가능성(날짜·시간대별)을 예보한다. "
+     "오늘부터 5일 뒤까지만 예보하고, 그 밖의 날짜는 not_forecast(예보 불가 + 과거 같은 달 참고 기록)로 돌려준다.",
      "parameters": {"type": "object", "properties": {
-         "days": {"type": "integer", "description": "예보 일수(1~5)", "default": 5},
-         "start": {"type": "string", "description": "시작 날짜 YYYY-MM-DD (없으면 내일)"}}}},
+         "start": {"type": "string", "description": "시작 날짜 YYYY-MM-DD (없으면 내일). 오늘을 물으면 오늘 날짜"},
+         "days": {"type": "integer", "description": "시작 날짜부터 며칠 (예: 다음 주 전체면 7)", "default": 5}}}},
     {"name": "recommend_actions", "description": "잉여 예보를 바탕으로 가전 사용·전기차 충전 시간을 추천한다.",
      "parameters": {"type": "object", "properties": {
          "target": {"type": "string", "enum": ["가전", "전기차"], "default": "가전"},

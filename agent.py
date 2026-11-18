@@ -15,23 +15,40 @@ from __future__ import annotations
 import json
 import re
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import requests
 
-from config import DEFAULT_LLM, get_key
+from config import DEFAULT_LLM, MAX_HORIZON_DAYS, get_key
 from facts import FACTS, SAFETY_RULES
 from tools import TOOL_SPECS, TOOLS
 
-SYSTEM_PROMPT = f"""너는 '제주 잉여전력 도우미'다. 제주 도민이 재생에너지가 남는 시간에 전기를 쓰도록 돕는다.
-오늘 날짜: {date.today():%Y-%m-%d}
+def _system_prompt() -> str:
+    """질문할 때마다 오늘 날짜·이번 주/다음 주 범위를 새로 넣음 (서버가 며칠씩 켜져 있어도 날짜가 맞도록)."""
+    now = datetime.now()
+    today = now.date()
+    mon = today - timedelta(days=today.weekday())
+    wd = "월화수목금토일"
+    last = today + timedelta(days=MAX_HORIZON_DAYS)
+    return f"""너는 '제주 잉여전력 도우미'다. 제주 도민이 재생에너지가 남는 시간에 전기를 쓰도록 돕는다.
+지금: {today:%Y-%m-%d}({wd[today.weekday()]}) {now:%H}시
+- 이번 주 = {mon:%Y-%m-%d}(월) ~ {mon + timedelta(days=6):%Y-%m-%d}(일)
+- 다음 주 = {mon + timedelta(days=7):%Y-%m-%d}(월) ~ {mon + timedelta(days=13):%Y-%m-%d}(일)
+- 예보 가능 범위 = {today:%Y-%m-%d} ~ {last:%Y-%m-%d}. 이 밖의 날짜는 예보할 수 없다.
 규칙:
 - 반드시 도구를 불러 그 결과에 있는 숫자·날짜·장소만 말한다. 도구 결과에 없는 것은 모른다고 말한다.
+- 사용자가 말한 기간(오늘·내일·이번 주·다음 주·특정 날짜·요일)을 위 날짜로 바꿔서, 그 기간에 맞게 forecast_surplus 의
+  start·days 를 정해 부른다. 묻지 않은 날짜를 그 기간인 것처럼 말하지 않는다.
+- 물은 기간의 일부만 예보 범위 안이면, 예보할 수 있는 날과 없는 날을 나눠서 말한다.
+- 도구 결과의 not_forecast 날짜는 "예보할 수 없다"고 먼저 말한다. past_surplus_day_rate_same_month 는
+  '과거 같은 달 기록(참고)'이라고 밝힐 때만 쓰고, 그 날짜의 예보처럼 말하지 않는다.
+- basis 가 '날씨 미반영'인 날은 '날씨 예보가 아직 없어 과거 패턴으로 본 참고치'라고 밝힌다.
+- "지금까지 대화 정리해줘", "방금 말한 거 다시 설명해줘"처럼 앞 대화에 대한 요청은 도구 없이 앞 대화 내용으로 답한다.
 - 질문이 도구로 답할 수 없는 내용(잉여전력·전기 사용 시간·충전소와 관계없는 질문)이면 도구를 억지로 부르지 말고,
   "제가 가진 데이터로는 답할 수 없어요"라고 말한 뒤 답할 수 있는 질문 예시 2~3개를 알려 준다.
 - 질문에 딱 맞는 도구만 부른다. 묻지 않은 예보·충전 습관을 덧붙이지 않는다.
 - 어르신도 알아듣게 짧고 쉬운 말로, 3~6문장으로 답한다. 시간은 '낮 12시~오후 2시'처럼 말한다.
-- 답 끝에 쓴 데이터 출처를 한 줄로 적는다 (예: 출처: 제주데이터허브 862, EPSIS).
+- 도구를 썼다면 답 끝에 실제로 쓴 데이터 출처를 한 줄로 적는다 (예: 출처: 제주데이터허브 862, EPSIS). 도구를 안 썼으면 적지 않는다.
 - 지켜야 할 사실:
 {chr(10).join('  - ' + f['text'] for f in FACTS.values())}
 - 주의:
@@ -74,9 +91,20 @@ def _run_tool(name: str, args: dict) -> dict:
         return {"error": f"{type(e).__name__}: {e}"}
 
 
-def _chat_openai(cfg: dict, question: str, trace: list) -> str:
+def _history_msgs(history: list | None) -> list[dict]:
+    """앞 대화(질문·답변)를 LLM 메시지로. 하루 한도를 아끼려고 최근 3번만, 답변은 1,200자까지."""
+    msgs = []
+    for q, a in (history or [])[-3:]:
+        msgs.append({"role": "user", "content": q})
+        if a:
+            msgs.append({"role": "assistant", "content": a[:1200]})
+    return msgs
+
+
+def _chat_openai(cfg: dict, question: str, trace: list, history: list | None = None) -> str:
     tools = [{"type": "function", "function": t} for t in TOOL_SPECS]
-    msgs = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": question}]
+    msgs = ([{"role": "system", "content": _system_prompt()}] + _history_msgs(history)
+            + [{"role": "user", "content": question}])
     for _ in range(6):
         r = requests.post(f"{cfg['base_url']}/chat/completions", timeout=90,
                           headers={"Authorization": f"Bearer {cfg['key']}"},
@@ -96,14 +124,14 @@ def _chat_openai(cfg: dict, question: str, trace: list) -> str:
     return "질문을 처리하는 데 단계가 너무 많이 필요했어요. 조금 더 짧게 물어봐 주세요."
 
 
-def _chat_anthropic(cfg: dict, question: str, trace: list) -> str:
+def _chat_anthropic(cfg: dict, question: str, trace: list, history: list | None = None) -> str:
     tools = [{"name": t["name"], "description": t["description"], "input_schema": t["parameters"]}
              for t in TOOL_SPECS]
-    msgs = [{"role": "user", "content": question}]
+    msgs = _history_msgs(history) + [{"role": "user", "content": question}]
     headers = {"x-api-key": cfg["key"], "anthropic-version": "2023-06-01"}
     for _ in range(6):
         r = requests.post(f"{cfg['base_url']}/messages", headers=headers, timeout=90,
-                          json={"model": cfg["model"], "max_tokens": 1200, "system": SYSTEM_PROMPT,
+                          json={"model": cfg["model"], "max_tokens": 1200, "system": _system_prompt(),
                                 "tools": tools, "messages": msgs})
         r.raise_for_status()
         body = r.json()
@@ -236,7 +264,15 @@ def _template(name: str, r: dict) -> str:
     if name == "recommend_actions":
         return "\n".join(f"- {t}" for t in r["tips"]) + f"\n- 참고: {FACTS['jeju_new_tariff_plan']['text']}"
     if name == "forecast_surplus":
-        return "\n".join(f"- {d['date']}({d['weekday']}): {d['level']} · {d['likely_time_text']}" for d in r["forecast"])
+        lines = [f"- {d['date']}({d['weekday']}): {d['level']} · {d['likely_time_text']}"
+                 + (" (날씨 미반영 참고치)" if d.get("basis", "").startswith("날씨 미반영") else "")
+                 for d in r["forecast"]]
+        nf = r.get("not_forecast")
+        if nf:
+            rates = ", ".join(f"{m} {v:.0%}" for m, v in nf["past_surplus_day_rate_same_month"].items())
+            lines.append(f"- {nf['dates']}: 예보할 수 있는 기간({r['forecast_range'].split(' (')[0]}) 밖이라 예보할 수 없어요. "
+                         f"참고로 과거 같은 달에 전기가 남은 날의 비율은 {rates}였어요(예보 아님).")
+        return "\n".join(lines)
     if name == "explain_benefits":
         lines = ["- 지금 바로: " + r["now_if_tou"],
                  "- 솔직히 말하면: " + r["not_for_standard"]]
@@ -377,19 +413,20 @@ def _fallback(question: str, trace: list, history: list[str] | None = None) -> s
 
 
 # ---------------------------------------------------------------- 공개 함수
-def ask(question: str, history: list[str] | None = None) -> dict:
-    """history: 같은 대화에서 앞서 한 질문들(오래된 것부터). '그렇게 하려면?' 같은 이어지는 질문을 이해하는 데 씀.
+def ask(question: str, history: list | None = None) -> dict:
+    """history: 같은 대화의 앞 질문들(오래된 것부터). 각 항목은 질문 문자열 또는 (질문, 답변).
+    LLM 에는 앞 질문·답변을 대화로 넘기고, 비상 모드는 앞 질문의 주제만 이어 받음.
     반환: {'answer': 답변, 'trace': 부른 도구와 결과, 'mode': 'llm' 또는 'fallback'}"""
     trace: list = []
+    pairs = [(h, None) if isinstance(h, str) else (h[0], h[1]) for h in (history or [])]
     cfg = _llm_config()
     if cfg:
         try:
             fn = _chat_anthropic if cfg["provider"] == "anthropic" else _chat_openai
-            q = question if not history else "(앞서 한 질문: " + " / ".join(history[-3:]) + ")\n" + question
-            return {"answer": fn(cfg, q, trace), "trace": trace, "mode": "llm"}
+            return {"answer": fn(cfg, question, trace, pairs), "trace": trace, "mode": "llm"}
         except Exception as e:
             trace.append({"tool": "llm_error", "args": {}, "result": {"error": str(e)}})
-    return {"answer": _fallback(question, trace, history), "trace": trace, "mode": "fallback"}
+    return {"answer": _fallback(question, trace, [q for q, _ in pairs]), "trace": trace, "mode": "fallback"}
 
 
 if __name__ == "__main__":
