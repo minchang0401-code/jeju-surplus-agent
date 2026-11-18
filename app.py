@@ -105,6 +105,8 @@ for q, res in st.session_state.history:
                     st.line_chart(both)
                 elif t["tool"] == "find_chargers" and r.get("chargers"):
                     st.dataframe(pd.DataFrame(r["chargers"]), hide_index=True)
+                elif t["tool"] == "llm_error":
+                    st.warning("AI(LLM) 연결 오류 — 그래서 규칙 기반으로 답했어요: " + str(r.get("error", "")))
                 elif t["tool"] == "plan_appliance_use" and (r.get("alternatives") or r.get("best_windows")):
                     w = pd.DataFrame(r.get("alternatives") or r["best_windows"])
                     w = w.rename(columns={"date": "날짜", "weekday": "요일", "time_text": "시간대",

@@ -104,6 +104,29 @@ def _run_tool(name: str, args: dict) -> dict:
         return {"error": f"{type(e).__name__}: {e}"}
 
 
+class LLMError(Exception):
+    """LLM 호출 실패. 화면 '근거 보기'에 원인(상태 코드·서버 메시지)을 보여 주려고 따로 둠. 키는 담지 않음."""
+
+
+def _post_retry(url: str, headers: dict, json: dict, tries: int = 3) -> requests.Response:
+    """429(분당 한도)·500·503(서버 붐빔)은 잠깐 기다렸다 다시 시도. 그래도 안 되면 원인을 담아 LLMError."""
+    import time
+    for i in range(tries):
+        r = requests.post(url, headers=headers, json=json, timeout=90)
+        if r.status_code < 400:
+            return r
+        if r.status_code in (429, 500, 503) and i < tries - 1:
+            time.sleep(4 * (i + 1))
+            continue
+        try:
+            detail = r.json().get("error", {})
+            detail = detail.get("message", "") if isinstance(detail, dict) else str(detail)
+        except Exception:
+            detail = r.text
+        raise LLMError(f"HTTP {r.status_code}: {detail[:300]}")
+    raise LLMError("알 수 없는 오류")
+
+
 def _history_msgs(history: list | None) -> list[dict]:
     """앞 대화(질문·답변)를 LLM 메시지로. 하루 한도를 아끼려고 최근 3번만, 답변은 1,200자까지."""
     msgs = []
@@ -119,10 +142,9 @@ def _chat_openai(cfg: dict, question: str, trace: list, history: list | None = N
     msgs = ([{"role": "system", "content": _system_prompt()}] + _history_msgs(history)
             + [{"role": "user", "content": question}])
     for _ in range(6):
-        r = requests.post(f"{cfg['base_url']}/chat/completions", timeout=90,
-                          headers={"Authorization": f"Bearer {cfg['key']}"},
-                          json={"model": cfg["model"], "messages": msgs, "tools": tools, "temperature": 0.2})
-        r.raise_for_status()
+        r = _post_retry(f"{cfg['base_url']}/chat/completions",
+                        headers={"Authorization": f"Bearer {cfg['key']}"},
+                        json={"model": cfg["model"], "messages": msgs, "tools": tools, "temperature": 0.2})
         msg = r.json()["choices"][0]["message"]
         calls = msg.get("tool_calls") or []
         if not calls:
@@ -143,10 +165,9 @@ def _chat_anthropic(cfg: dict, question: str, trace: list, history: list | None 
     msgs = _history_msgs(history) + [{"role": "user", "content": question}]
     headers = {"x-api-key": cfg["key"], "anthropic-version": "2023-06-01"}
     for _ in range(6):
-        r = requests.post(f"{cfg['base_url']}/messages", headers=headers, timeout=90,
-                          json={"model": cfg["model"], "max_tokens": 1200, "system": _system_prompt(),
-                                "tools": tools, "messages": msgs})
-        r.raise_for_status()
+        r = _post_retry(f"{cfg['base_url']}/messages", headers=headers,
+                        json={"model": cfg["model"], "max_tokens": 1200, "system": _system_prompt(),
+                              "tools": tools, "messages": msgs})
         body = r.json()
         uses = [b for b in body["content"] if b["type"] == "tool_use"]
         if not uses:
@@ -432,7 +453,7 @@ def _plan_text(r: dict) -> str:
             lines.append(f"- {name} {verb} 좋은 때 ({r['length_hours']}시간 연속):")
         for w in wins:
             ref = " · 날씨 미반영 참고치" if w["basis"].startswith("날씨 미반영") else ""
-            lines.append(f"  · {_day_text(w['date'], w['weekday'])} {w['time_text']} (가능성 {w['level']}{ref})")
+            lines.append(f"  - {_day_text(w['date'], w['weekday'])} {w['time_text']} (가능성 {w['level']}{ref})")
     lines.append(f"- {r['how']}")
     if r.get("ask_user"):
         lines.append(f"- {r['ask_user']}")
@@ -487,7 +508,7 @@ def _template(name: str, r: dict) -> str:
             cr = c.get("crowding_2022") or {}
             if "wait_rate" in cr:
                 extra = f" · 2022년 조사: 대기 발생 {cr['wait_rate']:.0%}, 관광객 {cr.get('tourist_share', 0):.0%}"
-            lines.append(f"  · {c['name']} ({dist}{quick}{fee}{extra})")
+            lines.append(f"  - {c['name']} ({dist}{quick}{fee}{extra})")
         return "\n".join(lines)
     if name == "ev_charging_habits":
         if "peak_charging_start_hour" not in r:
@@ -591,7 +612,7 @@ def _fallback(question: str, trace: list, history: list[str] | None = None) -> s
     seen, lines = set(), []
     for line in "\n".join(parts).split("\n"):
         key = line.split(": ", 1)[-1].strip()
-        if key and key in seen and not line.startswith("  ·"):   # 시간대 목록은 기기마다 보여 줌
+        if key and key in seen and not line.startswith("  - "):   # 시간대 목록은 기기마다 보여 줌
             continue
         seen.add(key)
         lines.append(line)
@@ -615,7 +636,10 @@ def ask(question: str, history: list | None = None) -> dict:
             fn = _chat_anthropic if cfg["provider"] == "anthropic" else _chat_openai
             return {"answer": fn(cfg, question, trace, pairs), "trace": trace, "mode": "llm"}
         except Exception as e:
-            trace.append({"tool": "llm_error", "args": {}, "result": {"error": str(e)}})
+            msg = str(e) if isinstance(e, LLMError) else f"{type(e).__name__}: {str(e)[:200]}"
+            if cfg.get("key"):
+                msg = msg.replace(cfg["key"], "***")   # 혹시 키가 섞여 나와도 가림
+            trace.append({"tool": "llm_error", "args": {}, "result": {"error": msg}})
     return {"answer": _fallback(question, trace, [q for q, _ in pairs]), "trace": trace, "mode": "fallback"}
 
 
