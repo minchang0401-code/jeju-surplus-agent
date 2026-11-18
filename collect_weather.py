@@ -213,6 +213,41 @@ def collect_forecast(now: datetime | None = None) -> pd.DataFrame:
     return out[cols]
 
 
+def forecast_issued_at() -> datetime | None:
+    """저장된 단기예보의 발표 시각. 파일이 없거나 읽을 수 없으면 None."""
+    if not FORECAST_HOURLY_CSV.exists():
+        return None
+    try:
+        base = str(pd.read_csv(FORECAST_HOURLY_CSV, usecols=["base"], dtype=str)["base"].iloc[0])
+        return datetime.strptime(base[:12], "%Y%m%d%H%M")
+    except Exception:
+        return None
+
+
+def refresh_forecast_if_stale(max_age_hours: float = 4.0) -> dict:
+    """앱을 열 때 부름. 저장된 예보가 max_age_hours 보다 오래됐고 키가 있으면 새 예보를 받음.
+    실패해도 예외를 내지 않음 → 앱은 저장된 예보로 계속 동작. 오류 메시지에 인증키를 넣지 않음.
+    반환 status: fresh(아직 새것) / updated(새로 받음) / no_key(키 없음) / failed(받기 실패)"""
+    issued = forecast_issued_at()
+    age = None if issued is None else (datetime.now() - issued).total_seconds() / 3600
+    info = {"issued_at": issued.strftime("%Y-%m-%d %H:%M") if issued else None,
+            "age_hours": None if age is None else round(age, 1)}
+    if age is not None and age < max_age_hours:
+        return {"status": "fresh", **info}
+    key = get_key("DATA_GO_KR_KEY")
+    if not key:
+        return {"status": "no_key", **info}
+    try:
+        collect_forecast()
+    except RuntimeError as e:     # 우리가 만든 메시지 (주소·키 없음)
+        return {"status": "failed", "error": str(e).replace(key, "***")[:200], **info}
+    except Exception as e:        # 네트워크 오류 등은 메시지에 주소(키 포함)가 들어갈 수 있어 종류만 남김
+        return {"status": "failed", "error": type(e).__name__, **info}
+    issued = forecast_issued_at()
+    return {"status": "updated", "issued_at": issued.strftime("%Y-%m-%d %H:%M") if issued else None,
+            "age_hours": 0.0 if issued is None else round((datetime.now() - issued).total_seconds() / 3600, 1)}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="cmd", required=True)

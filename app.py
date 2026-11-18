@@ -4,11 +4,22 @@
 """
 from __future__ import annotations
 
+import os
+
 import pandas as pd
 import streamlit as st
 
 from agent import ask
+from collect_weather import refresh_forecast_if_stale
 from tools import data_status, explain_surplus, forecast_surplus
+
+# 클라우드(Streamlit Community Cloud)에서는 키를 .env 대신 앱 설정의 Secrets 에 넣음 → 환경변수로 옮김
+try:
+    for _k in ("DATA_GO_KR_KEY", "KMA_APIHUB_KEY", "LLM_PROVIDER", "LLM_API_KEY", "LLM_MODEL"):
+        if _k in st.secrets and not os.environ.get(_k):
+            os.environ[_k] = str(st.secrets[_k])
+except Exception:   # Secrets 파일이 없는 PC 실행이면 .env 를 씀
+    pass
 
 st.set_page_config(page_title="제주 잉여전력 도우미", page_icon="⚡", layout="centered")
 st.markdown("""<style>
@@ -20,6 +31,16 @@ html, body, [class*="css"] { font-size: 19px; }
 st.title("⚡ 제주 잉여전력 도우미")
 st.caption("제주 재생에너지가 남는 시간을 미리 알려 드려요. 그 시간에 전기를 쓰면 버려질 전기를 살릴 수 있어요.")
 
+# 예보가 4시간보다 오래됐으면 새로 받음 (기상청 단기예보는 하루 8번 발표). 30분 동안은 다시 확인하지 않음.
+@st.cache_data(ttl=1800, show_spinner="최신 기상청 예보를 확인하고 있어요...")
+def _refresh_forecast() -> dict:
+    return refresh_forecast_if_stale()
+
+
+fresh = _refresh_forecast()
+if fresh["status"] == "failed":
+    st.warning("최신 기상청 예보를 받지 못해 저장된 예보로 안내합니다. 잠시 뒤 새로고침해 주세요."
+               + (f" (저장된 예보 발표: {fresh['issued_at']})" if fresh.get("issued_at") else ""))
 status = data_status()
 if status["mode"].startswith("저장"):
     st.info(f"실시간 예보가 연결되지 않아 저장된 데이터로 안내합니다. ({status['mode']})")
@@ -92,3 +113,6 @@ with st.sidebar:
     for k, v in status["available"].items():
         st.write(("✅ " if v else "⬜ ") + k)
     st.caption("허브 = 제주데이터허브 (대회 필수 데이터)")
+    if fresh.get("issued_at"):
+        st.caption(f"기상청 단기예보 발표: {fresh['issued_at']}"
+                   + (" (방금 새로 받음)" if fresh["status"] == "updated" else ""))

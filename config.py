@@ -6,7 +6,14 @@ API 키는 이 파일에 쓰지 않습니다. 프로젝트 폴더의 .env 파일
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
+
+# 시간대를 한국 시간으로 고정. 클라우드 서버(Streamlit Cloud 등)는 UTC라서 그대로 두면
+# '오늘·내일' 날짜와 단기예보 발표 시각이 9시간 어긋납니다. (Windows 에는 tzset 이 없어 PC 시간대를 그대로 씀)
+os.environ["TZ"] = "Asia/Seoul"
+if hasattr(time, "tzset"):
+    time.tzset()
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
