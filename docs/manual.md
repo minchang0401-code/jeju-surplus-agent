@@ -75,7 +75,7 @@ pip install -r requirements.txt
 | 4 | `python collect_weather.py history` | `data/weather_jeju_hourly.csv` (과거 관측) | 수 분 |
 | 5 | `python train.py` | `models/`, `reports/report.md`, `reports/metrics.json` | 1분 이내 |
 | 6 | `python collect_weather.py forecast` | `data/forecast_jeju_hourly.csv` (최신 단기예보) | 수 초 |
-| 7 | `python run_scenarios.py` | `reports/scenario_results.md` (시나리오 5개 + 질문 50개 + 이어지는 질문 8개 + 생활 언어 답변 7개) | 수 초 |
+| 7 | `python run_scenarios.py` | `reports/scenario_results.md` (시나리오 5개 + 질문 52개 + 이어지는 질문 8개 + 생활 언어 답변 7개) | 수 초 |
 | 8 | `python -m streamlit run app.py` | 브라우저에 화면 (http://localhost:8501) | — |
 
 - 1~5는 이미 결과가 들어 있으니 건너뛰어도 됩니다.
