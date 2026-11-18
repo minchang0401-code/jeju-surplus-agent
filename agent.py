@@ -51,6 +51,19 @@ def _llm_config() -> dict | None:
     return cfg
 
 
+def llm_status() -> dict:
+    """화면에 보여 줄 AI 연결 상태 (키 값은 절대 넣지 않음)."""
+    provider = (get_key("LLM_PROVIDER") or "none").lower()
+    if provider == "none":
+        return {"on": False, "text": "AI(LLM) 꺼짐 — 규칙 기반으로 답해요 (LLM_PROVIDER 미설정)"}
+    if provider not in DEFAULT_LLM:
+        return {"on": False, "text": f"AI(LLM) 꺼짐 — 지원하지 않는 LLM_PROVIDER: {provider}"}
+    if not get_key("LLM_API_KEY"):
+        return {"on": False, "text": "AI(LLM) 꺼짐 — LLM_API_KEY 가 없어요"}
+    cfg = _llm_config()
+    return {"on": True, "text": f"AI(LLM) 연결: {provider} · {cfg['model']}"}
+
+
 def _run_tool(name: str, args: dict) -> dict:
     fn = TOOLS.get(name)
     if fn is None:

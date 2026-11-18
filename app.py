@@ -9,7 +9,7 @@ import os
 import pandas as pd
 import streamlit as st
 
-from agent import ask
+from agent import ask, llm_status
 from collect_weather import refresh_forecast_if_stale
 from tools import data_status, explain_surplus, forecast_surplus
 
@@ -113,6 +113,8 @@ with st.sidebar:
     for k, v in status["available"].items():
         st.write(("✅ " if v else "⬜ ") + k)
     st.caption("허브 = 제주데이터허브 (대회 필수 데이터)")
+    _ls = llm_status()
+    st.caption(("🟢 " if _ls["on"] else "⚪ ") + _ls["text"])
     if fresh.get("issued_at"):
         st.caption(f"기상청 단기예보 발표: {fresh['issued_at']}"
                    + (" (방금 새로 받음)" if fresh["status"] == "updated" else ""))
