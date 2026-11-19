@@ -50,12 +50,19 @@ DARK = _is_dark()
 INK = "#e8eeeb" if DARK else "#15211d"          # 그래프 위 글자·고른 시각 선
 NIGHT = "#2a2f36" if DARK else "#f1f4f3"         # 그래프의 밤 배경
 GUIDE = "#6f7c77" if DARK else "#9aa8a2"         # 20%·50% 점선
+# 날짜 카드 배경: 다크 모드에서는 같은 등급 색을 어둡게 (낮음 진회색 · 보통 진초록 · 높음 진주황)
+CARD_BG = {"높음": "#7a4a12", "보통": "#1f5c3f", "낮음": "#2b3137"} if DARK else LEVEL_COLOR
 st.markdown(f"""<style>:root {{
   --ink: {'#e8eeeb' if DARK else '#1b1b1b'}; --ink2: {'#aab7b2' if DARK else '#5b6b66'};
   --ink-k: {'#cdd7d3' if DARK else '#3d4b46'}; --accent: {'#8ab8f0' if DARK else '#1f4f8f'};
   --panel: {'rgba(255,255,255,.06)' if DARK else '#f6f8fb'}; --panel-border: {'rgba(255,255,255,.14)' if DARK else '#dfe6ef'};
   --myinfo: {'rgba(120,170,240,.08)' if DARK else '#f6f9fd'}; --chip: {'rgba(255,255,255,.08)' if DARK else '#f4f7f6'};
   --header: {'rgba(14,17,23,.85)' if DARK else 'rgba(255,255,255,.85)'};
+  --card-ink: {'#eef3f0' if DARK else '#1b1b1b'}; --card-ink2: {'#c3cfca' if DARK else '#33413c'};
+  --card-border: {'rgba(255,255,255,.10)' if DARK else 'rgba(0,0,0,.05)'};
+  --pill: {'#2b3137' if DARK else '#eef2f0'}; --pill-ink: {'#d6dfdb' if DARK else '#2d3b36'}; --pill-border: {'#3b434b' if DARK else '#dde4e0'};
+  --ok: {'#1f4a36' if DARK else '#dff1e8'}; --ok-ink: {'#9fe0bf' if DARK else '#0d6b44'}; --ok-border: {'#2f6b4f' if DARK else '#a9dcc2'};
+  --warn: {'#4a3a14' if DARK else '#fff4dc'}; --warn-ink: {'#f3cf7a' if DARK else '#8a5a00'}; --warn-border: {'#6b5520' if DARK else '#f2dcaa'};
 }}</style>""", unsafe_allow_html=True)
 st.markdown("""<style>
 /* 한 화면(스크롤 없이)에 맞추기: 지도 높이 = 화면 높이 - 나머지(머리말·카드·버튼·그래프) → 화면이 크면 지도도 커짐 */
@@ -95,17 +102,17 @@ header[data-testid="stHeader"] { height: 2.4rem; background: var(--header); }
 h1 { font-size: 1.55rem !important; margin: 0 !important; padding: 0 !important; }
 .sub { color: var(--ink2); font-size: .9rem; margin-top: .1rem; }
 .pill { display:inline-block; font-size:.78rem; padding:3px 10px; border-radius:999px; margin-left:6px;
-        background:#eef2f0; color:#2d3b36; border:1px solid #dde4e0; }
-.pill.ok { background:#dff1e8; color:#0d6b44; border-color:#a9dcc2; }
-.pill.warn { background:#fff4dc; color:#8a5a00; border-color:#f2dcaa; }
+        background:var(--pill); color:var(--pill-ink); border:1px solid var(--pill-border); }
+.pill.ok { background:var(--ok); color:var(--ok-ink); border-color:var(--ok-border); }
+.pill.warn { background:var(--warn); color:var(--warn-ink); border-color:var(--warn-border); }
 .days { display:flex; gap:8px; margin:.15rem 0 0; }
-.day { flex:1; border-radius:10px; padding:4px 8px; text-align:center; color:#1b1b1b; border:1px solid rgba(0,0,0,.05); }
-.day .d { font-size:.76rem; color:#33413c; line-height:1.3; }
+.day { flex:1; border-radius:10px; padding:4px 8px; text-align:center; color:var(--card-ink); border:1px solid var(--card-border); }
+.day .d { font-size:.76rem; color:var(--card-ink2); line-height:1.3; }
 .day .lv { font-size:1rem; font-weight:800; line-height:1.3; }
-.day .t { font-size:.7rem; color:#33413c; line-height:1.25; }
+.day .t { font-size:.7rem; color:var(--card-ink2); line-height:1.25; }
 .reco { font-size:.85rem; line-height:1.6; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.win { display:inline-block; margin:2px 6px 2px 0; padding:4px 10px; border-radius:999px; background:#dff1e8;
-       color:#0d6b44; font-weight:700; font-size:.85rem; }
+.win { display:inline-block; margin:2px 6px 2px 0; padding:4px 10px; border-radius:999px; background:var(--ok);
+       color:var(--ok-ink); font-weight:700; font-size:.85rem; }
 .panel-title { font-weight:800; font-size:1.05rem; margin-bottom:.2rem; }
 .mapnote { background:var(--panel); border:1px solid var(--panel-border); border-radius:10px; padding:.3rem .6rem; margin:0;
            font-size:.8rem; line-height:1.4; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -252,7 +259,7 @@ with left:
     try:
         fc = forecast_surplus(5)
         cards = "".join(
-            f"<div class='day' style='background:{LEVEL_COLOR[d['level']]}'>"
+            f"<div class='day' style='background:{CARD_BG[d['level']]}'>"
             f"<div class='d'>{d['date'][5:].replace('-', '/')} ({d['weekday']})</div>"
             f"<div class='lv'>{d['level']} · {d['max_prob']:.0%}</div>"
             f"<div class='t'>{d['likely_time_text'] if d['likely_hours'] else '-'}</div></div>"
