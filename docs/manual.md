@@ -76,7 +76,7 @@ pip install -r requirements.txt
 | 5 | `python train.py` | `models/`, `reports/report.md`, `reports/metrics.json` | 1분 이내 |
 | 6 | `python collect_weather.py forecast` | `data/forecast_jeju_hourly.csv` (최신 단기예보) | 수 초 |
 | 7 | `python run_scenarios.py` | `reports/scenario_results.md` (시나리오 5개 + 질문 58개 + 이어지는 질문 8개 + 생활 언어 답변 10개) | 수 초 |
-| 7-1 | `pip install -r requirements-dev.txt` 후 `python -m pytest` | 자동 시험 119개 통과 여부 (키·인터넷 필요 없음) | 수 초 |
+| 7-1 | `pip install -r requirements-dev.txt` 후 `python -m pytest` | 자동 시험 123개 통과 여부 (키·인터넷 필요 없음) | 수 초 |
 | 8 | `python -m streamlit run app.py` | 브라우저에 화면 (http://localhost:8501) | — |
 
 - 1~5는 이미 결과가 들어 있으니 건너뛰어도 됩니다.
@@ -85,6 +85,7 @@ pip install -r requirements.txt
 
 ## 5. 결과 확인
 - **👤 내 정보 (사이드바):** 동네·전기차·평일 출퇴근 시각·계시별 요금제를 넣고 '저장'을 누르면 이후 질문에 기본값으로 쓰입니다. 저장 뒤 **페이지 주소를 즐겨찾기**하면 다음에도 불러와집니다(새로고침만 하면 그대로, 새 탭에서 빈 주소로 열면 초기화).
+- **📍 내 주변 충전소:** '지도로 보기 → 📍 내 주변'에서 '내 위치로 찾기' → 브라우저의 위치 허용 → 가까운 충전소 5곳과 '여기까지 길찾기'. 위치를 허용하지 않거나 제주 밖이면 저장한 동네 기준으로 보여요. 위치는 저장하지 않아요.
 - **📅 캘린더에 넣기:** 시간 추천 답 아래 버튼으로 구글 캘린더(안드로이드·PC) 또는 .ics 파일(아이폰·아웃룩)에 저장 → 10분 전 알림
 - **화면:** 5일 예보 카드(높음·보통·낮음), '🗺️ 지도로 보기'(충전소·풍력발전소, '급속 충전소만 보기' 스위치), 빠른 질문 3개, 대화창, '근거 보기'(어떤 도구·데이터를 썼는지, 표·그래프·지도)
 - **사이드바:** 데이터 준비 상태, AI 연결 상태, 기상청 예보 발표 시각

@@ -34,8 +34,9 @@
 | `collect_weather.py` | 기상청 ASOS 과거 관측(API허브 키) / 단기예보(공공데이터포털 키) |
 | `prepare_files.py` | 파일형 허브 데이터 877·123·472 정리 |
 | `user_profile.py` | 내 정보(동네·차종·출퇴근·요금제) → 질문 기본값, 주소창 저장 |
+| `nearby_map.py` | 내 주변 충전소 지도: GPS(브라우저 안에서만) → 실패 시 저장한 동네 → 카카오맵 길찾기 |
 | `calendar_link.py` | 추천 시간대 → 구글 캘린더 링크·.ics 파일(10분 전 알림) |
-| `tests/` | **pytest 자동 시험 119개** (아래 '자동 시험') |
+| `tests/` | **pytest 자동 시험 123개** (아래 '자동 시험') |
 | `run_scenarios.py` | Agent 시험 (시나리오 5개, 질문 58개, 이어지는 질문 8개, 생활 언어 답변 10개) |
 | `experiments/` | 사전 실험(Open-Meteo)과 그림 그리기 — 제출 모델과는 별개 |
 
@@ -76,7 +77,7 @@ python -m streamlit run app.py       # 화면 (예보는 열 때 자동 갱신)
 ## 자동 시험 (재현성 확인)
 ```bash
 pip install -r requirements-dev.txt   # pytest 추가
-python -m pytest                       # 119개, 키·인터넷 없이 수 초
+python -m pytest                       # 123개, 키·인터넷 없이 수 초
 ```
 | 시험 파일 | 확인하는 것 |
 |---|---|
@@ -84,6 +85,7 @@ python -m pytest                       # 119개, 키·인터넷 없이 수 초
 | `tests/test_tools.py` | 도구 11개 명세, 예보 범위(5일) 밖은 예보하지 않음, 기기 찾기·전기차 계산, 저녁 사용 정직 안내, 보일러·출근 일정, 충전소 찾기, 계통 기록 숫자, 지도 좌표 |
 | `tests/test_agent.py` | 질문 이해 58개·이어지는 질문 8개·답변 10개·시나리오 5개(`run_scenarios.py`와 같은 목록), LLM 한도 초과·지연 재시도, 실패 시 규칙 기반 전환과 키 가림 |
 | `tests/test_profile_calendar.py` | 내 정보가 기본값으로 쓰이고 질문이 우선하는지, 캘린더 링크·.ics(10분 전 알림) |
+| `tests/test_nearby_map.py` | 내 주변 지도의 세 가지 동작(GPS·동네 대체·길찾기), 이름이 스크립트를 깨지 않는지, 자바스크립트 문법 |
 | `tests/test_security.py` | 소스·문서에 API 키가 없는지, `.env`가 제외되는지 |
 
 시험 중에는 `.env`에 LLM 키가 있어도 Gemini를 부르지 않습니다(`tests/conftest.py`). Gemini 응답 시험은 `python run_llm_eval.py`로 따로 합니다.

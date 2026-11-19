@@ -239,7 +239,9 @@ def find_chargers(area: str = "", quick_only: bool = False, limit: int = 5, radi
                 "has_quick": bool(r["has_quick"]),   # 주차요금(parkingFeeFlag)은 값의 뜻이 문서로 확인되지 않아 넣지 않음
                 "lat": round(float(r["lat"]), 5), "lon": round(float(r["lon"]), 5),
                 # 허브 862에는 주소가 없어 좌표로 카카오맵 위치 링크를 만듦 (누르면 지도·길찾기)
-                "map_link": "https://map.kakao.com/link/map/" + quote(f"{name},{float(r['lat']):.5f},{float(r['lon']):.5f}", safe=",")}
+                "map_link": "https://map.kakao.com/link/map/" + quote(f"{name},{float(r['lat']):.5f},{float(r['lon']):.5f}", safe=","),
+                # 카카오맵이 휴대폰의 현재 위치(GPS)에서 이 충전소까지 길을 안내 (우리 앱은 위치를 받지 않음)
+                "route_link": kakao_route(name, float(r["lat"]), float(r["lon"]))}
         if "distance_km" in r:
             item["distance_km"] = float(r["distance_km"])
         hit = crowd[crowd["station"].apply(lambda s: s in name or name in s)] if crowd is not None else None
@@ -253,6 +255,31 @@ def find_chargers(area: str = "", quick_only: bool = False, limit: int = 5, radi
     if area in PLACE_COORDS:
         out["center"] = {"lat": PLACE_COORDS[area][0], "lon": PLACE_COORDS[area][1]}
     return out
+
+
+def kakao_route(name: str, lat: float, lon: float) -> str:
+    """카카오맵 길찾기 링크: 열면 사용자의 현재 위치에서 목적지까지 경로를 보여 줌."""
+    name = str(name).replace(",", " ").strip()   # 카카오 링크는 쉼표로 이름·좌표를 나눔
+    return "https://map.kakao.com/link/to/" + quote(f"{name},{lat:.5f},{lon:.5f}", safe=",")
+
+
+def charger_places() -> pd.DataFrame:
+    """충전소를 장소 단위로 합친 표 (이름·좌표·급속 여부·대수). 화면의 내 주변 지도에 씀."""
+    st_ = _hub_csv(862)
+    if st_ is None:
+        return pd.DataFrame(columns=["name", "lat", "lon", "quick", "quick_count", "slow_count"])
+    df = st_.copy()
+    df["lat"] = pd.to_numeric(df["latitude"], errors="coerce")
+    df["lon"] = pd.to_numeric(df["longitude"], errors="coerce")
+    df = df[df["lat"].between(33.1, 34.0) & df["lon"].between(126.1, 127.0)]
+    df["q"] = df["quickChargingFlag"].astype(str).str.lower().isin(["true", "1", "y"])
+    for c in ("chargerCount", "quickChargerCount"):
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+    g = df.groupby("chargingPlace").agg(lat=("lat", "mean"), lon=("lon", "mean"), quick=("q", "max"),
+                                        quick_count=("quickChargerCount", "sum"),
+                                        slow_count=("chargerCount", "sum")).reset_index()
+    g["chargingPlace"] = g["chargingPlace"].astype(str).str.strip()
+    return g.rename(columns={"chargingPlace": "name"})
 
 
 def map_points(quick_only: bool = False) -> pd.DataFrame:

@@ -14,7 +14,9 @@ from calendar_link import google_url, ics_bytes, pick_window
 from tools import PLACE_COORDS
 import user_profile as up
 from collect_weather import refresh_forecast_if_stale
-from tools import data_status, explain_surplus, forecast_surplus, map_points
+from tools import charger_places, data_status, explain_surplus, forecast_surplus, map_points
+from nearby_map import nearby_map_html
+import streamlit.components.v1 as components
 
 # 클라우드(Streamlit Community Cloud)에서는 키를 .env 대신 앱 설정의 Secrets 에 넣음 → 환경변수로 옮김
 try:
@@ -79,7 +81,16 @@ def _map_points(quick_only: bool) -> pd.DataFrame:
     return map_points(quick_only)
 
 
-with st.expander("🗺️ 지도로 보기 — 충전소와 풍력발전소"):
+@st.cache_data(ttl=86400, show_spinner=False)
+def _nearby_data():
+    from config import DATA
+    g = charger_places()
+    wf = DATA / "grid_raw" / "jeju_wind_farms_approx.csv"
+    w = pd.read_csv(wf).rename(columns={"lat_approx": "lat", "lon_approx": "lon", "설비용량_MW": "mw"}) if wf.exists() else None
+    return g, w
+
+
+def _all_map():
     quick_only = st.toggle("급속 충전소만 보기", value=False)
     pts = _map_points(quick_only)
     if len(pts):
@@ -90,6 +101,26 @@ with st.expander("🗺️ 지도로 보기 — 충전소와 풍력발전소"):
                    "출처: 제주데이터허브 862, 제주특별자치도 풍력발전현황(허브 472)")
     else:
         st.info("지도에 표시할 데이터가 없어요.")
+
+
+with st.expander("🗺️ 지도로 보기 — 내 주변 충전소와 풍력발전소", expanded=False):
+    tab_me, tab_all = st.tabs(["📍 내 주변 (길찾기)", "🗺️ 제주 전체"])
+    with tab_me:
+        g, w = _nearby_data()
+        home = None
+        if profile.get("area") in PLACE_COORDS:
+            lat, lon = PLACE_COORDS[profile["area"]]
+            home = {"name": profile["area"], "lat": lat, "lon": lon}
+        if len(g):
+            components.html(nearby_map_html(g, w, home), height=760, scrolling=True)
+            st.caption("📍 위치는 이 화면(브라우저) 안에서만 쓰고 서버로 보내거나 저장하지 않아요. "
+                       "위치를 허용하지 않으면 '👤 내 정보'에 저장한 동네 기준으로 보여 드려요. "
+                       "'여기까지 길찾기'를 누르면 카카오맵이 지금 위치에서 길을 안내해요.")
+        else:
+            st.info("충전소 데이터(허브 862)가 없어 내 주변 지도를 그릴 수 없어요.")
+    with tab_all:
+        _all_map()
+
 
 # ---------------------------------------------------------------- 대화
 st.divider()
@@ -152,9 +183,10 @@ for i, (q, res) in enumerate(st.session_state.history):
                         st.caption("🔵 급속 있음 · ⚪ 완속만 · 🟠 찾은 동네 중심")
                     show = cdf.drop(columns=[c for c in ("lat", "lon", "has_quick") if c in cdf.columns]).rename(
                         columns={"name": "충전소", "quick_count": "급속", "slow_count": "완속", "distance_km": "거리(km)",
-                                 "map_link": "위치"})
-                    st.dataframe(show, hide_index=True,
-                                 column_config={"위치": st.column_config.LinkColumn("위치", display_text="카카오맵 열기")})
+                                 "map_link": "위치", "route_link": "길찾기"})
+                    st.dataframe(show, hide_index=True, column_config={
+                        "위치": st.column_config.LinkColumn("위치", display_text="카카오맵 열기"),
+                        "길찾기": st.column_config.LinkColumn("길찾기", display_text="내 위치에서 길찾기")})
                 elif t["tool"] == "grid_records" and "curtailment" in r:
                     h = pd.Series(r["curtailment"]["wind_mwh_by_hour"]).rename(index=lambda x: f"{int(x):02d}시")
                     st.bar_chart(h, y_label="풍력 출력제어량(MWh)")

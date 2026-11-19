@@ -60,8 +60,10 @@ def _system_prompt(profile: dict | None = None) -> str:
   (예: "내일은 가능성이 낮아요. 일요일 낮 12시~오후 2시는 '보통'이라 더 나아요.").
 - 전기차는 배터리가 몇 % 남았는지만 물을 수 있다(ask_user). 보일러는 ask_user 질문을 그대로 묻고,
   기름·가스 보일러라고 하면 fuel 을 넣어 다시 불러 support_program 을 안내한다.
-- 충전소를 알려 줄 때는 가까운 순서로 거리(distance_km)를 함께 말하고, "위치는 답 아래 '근거 보기' 표의
-  '카카오맵 열기'를 누르면 지도와 길찾기로 볼 수 있어요"라고 안내한다. 답 본문에 링크 주소를 쓰지 않는다.
+- 충전소를 알려 줄 때는 가까운 순서로 거리(distance_km)를 함께 말하고, "답 아래 '근거 보기' 표의
+  '내 위치에서 길찾기'를 누르면 카카오맵이 지금 위치에서 길을 안내해요"라고 안내한다. 답 본문에 링크 주소를 쓰지 않는다.
+- "내 위치", "여기서 가까운"처럼 현재 위치를 물으면, 서버는 GPS를 알 수 없으니 화면 위 '🗺️ 지도로 보기 → 📍 내 주변'에서
+  '내 위치로 찾기'를 누르라고 안내하고, 저장한 내 동네가 있으면 그 동네로 찾아 준다.
 - 사용자가 출근·외출 일정을 말하면(예: '9시 출근 6시 퇴근') away_start·away_end 로 넣는다. 결과의 schedule 을 보고,
   예약 기능이 있는 기기는 집에 없어도 낮에 돌릴 수 있다고 알려 주고, 전기차는 '회사 근처 충전소에서 낮에'와 '집에서'를 나눠 말한다.
 - shift 가 '불가'·'낮음'인 기기는 억지로 시간을 옮기라고 하지 않고 도구의 how 를 전한다.
@@ -586,7 +588,8 @@ def _template(name: str, r: dict) -> str:
             cr = c.get("crowding_2022") or {}
             if "wait_rate" in cr:
                 extra = f" · 2022년 조사: 대기 발생 {cr['wait_rate']:.0%}, 관광객 {cr.get('tourist_share', 0):.0%}"
-            link = f" [지도]({c['map_link']})" if c.get("map_link") else ""
+            link = (f" [지도]({c['map_link']})" if c.get("map_link") else "") + \
+                   (f" [길찾기]({c['route_link']})" if c.get("route_link") else "")
             lines.append(f"  - {c['name']} ({dist}{quick}{fee}{extra}){link}")
         return "\n".join(lines)
     if name == "ev_charging_habits":
