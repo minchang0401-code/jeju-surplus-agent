@@ -303,8 +303,12 @@ with left:
     g, w = _nearby_data()
 
     if hourly is not None and len(hourly):
-        wins = best_windows(hourly, hours=3, top=3)
-        default = hourly.loc[hourly["prob"].idxmax(), "label"]
+        # 추천·처음 고르는 시각은 아직 지나지 않은 시간에서만 (오후에 열면 오늘 낮은 이미 지났음)
+        upcoming = hourly[hourly["ts"] + pd.Timedelta(hours=1) > pd.Timestamp.now()]
+        if upcoming.empty:
+            upcoming = hourly
+        wins = best_windows(upcoming, hours=3, top=3)
+        default = upcoming.loc[upcoming["prob"].idxmax(), "label"]
         try:   # 그래프에서 누른 시각 (안 눌렀으면 이전에 고른 시각, 처음엔 가능성이 가장 높은 시각)
             _rows = (st.session_state.get("hourpick") or {}).get("selection", {}).get("pick") or []
             if _rows and _rows[0].get("label") in set(hourly["label"]):
@@ -374,7 +378,7 @@ with left:
         if wins:
             cand_lbl, cand = "추천 시간대(3시간)", wins
         else:   # 3시간 연속으로는 20%를 못 넘어도, 한 시간이라도 넘는 때가 있으면 그 시간 (카드·그래프와 어긋나지 않게)
-            cand_lbl, cand = "가능성 있는 시간", best_windows(hourly, hours=1, top=3)
+            cand_lbl, cand = "가능성 있는 시간", best_windows(upcoming, hours=1, top=3)
         chips = ("".join(f"<span class='chip'>{v['text']} · {v['prob']:.0%}</span>" for v in cand) if cand
                  else "<span class='lbl'>앞으로 며칠은 가능성이 20%를 넘는 시간이 없어요</span>")
         try:
