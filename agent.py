@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import inspect
 import json
 import re
 import sys
@@ -105,8 +106,15 @@ def _run_tool(name: str, args: dict) -> dict:
     fn = TOOLS.get(name)
     if fn is None:
         return {"error": f"없는 도구: {name}"}
+    args = dict(args or {})
+    # LLM 이 다른 도구의 인자 이름을 섞어 쓰는 경우(예: plan_appliance_use 에 target='전기차')를 바로잡음
+    if name == "plan_appliance_use" and "target" in args and not args.get("appliance"):
+        args["appliance"] = args.pop("target")
+    params = inspect.signature(fn).parameters
+    if not any(p.kind == p.VAR_KEYWORD for p in params.values()):
+        args = {k: v for k, v in args.items() if k in params}   # 모르는 인자는 버림 (오류로 한 번 더 부르지 않게)
     try:
-        return fn(**(args or {}))
+        return fn(**args)
     except Exception as e:  # 도구 오류도 LLM에게 그대로 알려 설명하게 함
         return {"error": f"{type(e).__name__}: {e}"}
 

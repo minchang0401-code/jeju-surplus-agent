@@ -35,7 +35,7 @@
 | `prepare_files.py` | 파일형 허브 데이터 877·123·472 정리 |
 | `user_profile.py` | 내 정보(동네·차종·출퇴근·요금제) → 질문 기본값, 주소창 저장 |
 | `calendar_link.py` | 추천 시간대 → 구글 캘린더 링크·.ics 파일(10분 전 알림) |
-| `tests/` | **pytest 자동 시험 118개** (아래 '자동 시험') |
+| `tests/` | **pytest 자동 시험 119개** (아래 '자동 시험') |
 | `run_scenarios.py` | Agent 시험 (시나리오 5개, 질문 58개, 이어지는 질문 8개, 생활 언어 답변 10개) |
 | `experiments/` | 사전 실험(Open-Meteo)과 그림 그리기 — 제출 모델과는 별개 |
 
@@ -76,7 +76,7 @@ python -m streamlit run app.py       # 화면 (예보는 열 때 자동 갱신)
 ## 자동 시험 (재현성 확인)
 ```bash
 pip install -r requirements-dev.txt   # pytest 추가
-python -m pytest                       # 118개, 키·인터넷 없이 수 초
+python -m pytest                       # 119개, 키·인터넷 없이 수 초
 ```
 | 시험 파일 | 확인하는 것 |
 |---|---|

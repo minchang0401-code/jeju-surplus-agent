@@ -82,3 +82,8 @@ def test_llm_failure_falls_back_and_hides_key(monkeypatch):
     assert res["mode"] == "fallback"
     err = [t for t in res["trace"] if t["tool"] == "llm_error"][0]["result"]["error"]
     assert secret not in err and "***" in err
+
+
+def test_tool_args_are_repaired():
+    r = agent._run_tool("plan_appliance_use", {"target": "전기차", "car": "아이오닉5", "unknown_arg": 1})
+    assert "error" not in r and r["appliance"] == "전기차"
