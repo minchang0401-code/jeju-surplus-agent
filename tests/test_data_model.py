@@ -1,0 +1,36 @@
+"""정답 데이터와 예측 성능이 문서에 적힌 숫자와 같은지 확인."""
+import json
+
+import pandas as pd
+
+from config import REPORTS
+from features import load_labels
+
+
+def test_label_counts_match_docs():
+    lab = load_labels()
+    lab = lab[(lab["date"] >= "2024-06-01") & (lab["date"] <= "2026-11-17")]
+    assert lab["date"].nunique() == 900
+    assert int(lab["is_surplus"].sum()) == 347                      # 잉여 347시간
+    assert int(lab.groupby("date")["is_surplus"].max().sum()) == 127  # 잉여 127일
+
+
+def test_hour_label_is_interval_end():
+    lab = load_labels()
+    assert lab["hour"].min() == 1 and lab["hour"].max() == 24       # '13시' = 12~13시
+
+
+def test_weather_model_beats_baselines():
+    r = json.loads((REPORTS / "metrics.json").read_text(encoding="utf-8"))["results"]
+    best = r["full_monthly_retrain"]["day_pr_auc"]
+    assert best >= 0.6
+    for base in ("baseline_rule", "baseline_climatology", "calendar_static"):
+        assert best > r[base]["day_pr_auc"], base
+    base_rate = r["full_monthly_retrain"]["day_base_rate"]
+    assert best > 3 * base_rate                                      # 무작위보다 3배 넘게
+
+
+def test_no_future_leak_in_test_period():
+    meta = json.loads((REPORTS / "metrics.json").read_text(encoding="utf-8"))["meta"]
+    text = json.dumps(meta, ensure_ascii=False)
+    assert "2026-01-01" in text                                      # 시험 기간 시작일이 기록돼 있음
