@@ -237,13 +237,8 @@ with left:
         else:
             mode = st.radio("지도", MODES, horizontal=True, label_visibility="collapsed")
     with c_note:   # 한 줄 설명 (길면 말줄임, 전체 글은 마우스를 올리면 보임)
-        if cur is not None and mode == MODES[0]:
-            # 제주는 전력망(계통)이 하나라 잉여(SMP 0원 이하)도 섬 전체에서 같은 시각에 생김 → 색은 섬 전체 예보 한 값
-            _c = prob_color(cur["prob"])
-            _why = ("제주는 전력망이 하나라 남는 전기도 섬 전체에서 같은 시각에 생겨요. 그래서 지도의 원 색은 모두 같고, "
-                    "원 크기가 권역별 재생에너지 설비(어디서 전기를 많이 만드는지)를 보여 줘요. 아래 슬라이더로 시각을 바꿀 수 있어요.")
-            _html(f"<div class='mapnote' title='{_why}'><span class='dot' style='background:rgb({_c[0]},{_c[1]},{_c[2]})'></span>"
-                  f"<b>{sel} · 제주에 전기가 남을 가능성 {cur['pct']:.0f}% ({cur['level']})</b> <span class='why'>ⓘ 왜 색이 다 같나요?</span></div>")
+        if mode == MODES[0]:
+            pass   # 고른 시각의 가능성은 지도 안 왼쪽 위 배지에 이미 크게 보임
         else:
             _html("<div class='mapnote' title='위치는 이 화면(브라우저) 안에서만 쓰고 서버로 보내거나 저장하지 않아요. "
                   "허용하지 않거나 제주 밖이면 오른쪽 👤 내 정보의 동네로 보여 드려요.'>🔌 제주 공용 충전소 전체 · "
@@ -436,7 +431,7 @@ with side:
 
     _me_sync()
     with st.container(key="myinfo", border=True):
-        st.markdown("<div class='me-title'>👤 내 정보 <span class='me-note'>고르면 바로 반영돼요</span></div>",
+        st.markdown("<div class='me-title'>👤 내 정보</div>",
                     unsafe_allow_html=True)
 
         def _row(label: str):
