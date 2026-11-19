@@ -67,6 +67,18 @@ def summary(p: dict | None) -> str:
     return " · ".join(bits)
 
 
+def short(p: dict | None) -> str:
+    """화면 오른쪽 위 한 줄용 짧은 요약 (예: '노형 · 아이오닉5 · 평일 9~18시'). 비어 있으면 ''."""
+    if not is_set(p):
+        return ""
+    bits = [b for b in (p.get("area"), p.get("car")) if b]
+    if p.get("work_start") is not None:
+        bits.append(f"평일 {p['work_start']}~{p['work_end']}시")
+    if p.get("tou") == "가입":
+        bits.append("계시별 요금")
+    return " · ".join(bits)
+
+
 def to_prompt(p: dict | None) -> str:
     """LLM 지침에 붙일 문장."""
     if not is_set(p):

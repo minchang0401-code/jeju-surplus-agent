@@ -255,7 +255,7 @@ function useHome(reason) {
     say(reason + " 저장한 내 동네(" + HOME.name + ") 중심으로 보여 드려요.", "warn");
     showAt(HOME.lat, HOME.lon, "내 동네(" + HOME.name + ")", 0, false);
   } else {
-    say(reason + " 왼쪽(휴대폰은 왼쪽 위 '>' 버튼) '👤 내 정보'에 동네를 저장하면 그 기준으로 보여 드려요.", "warn");
+    say(reason + " 오른쪽 '에너지 도우미' 맨 위 '👤 내 정보'에 동네를 저장하면 그 기준으로 보여 드려요.", "warn");
   }
 }
 $("gps").onclick = function () {

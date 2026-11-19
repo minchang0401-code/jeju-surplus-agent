@@ -2,7 +2,7 @@
 
     streamlit run app.py
 
-화면 구성: 왼쪽 = 예보 카드 · 지도 · 시간별 잉여 가능성 그래프 / 오른쪽 = 에이전트 대화 패널 / 사이드바 = 내 정보·데이터 상태
+화면 구성: 왼쪽 = 예보 카드 · 지도 · 시간별 잉여 가능성 그래프 / 오른쪽 = 에이전트 대화 패널 / 오른쪽 맨 위 = 👤 내 정보 한 줄 / 사이드바 = 데이터 상태
 """
 from __future__ import annotations
 
@@ -41,6 +41,8 @@ header[data-testid="stHeader"] { height: 2.4rem; background: rgba(255,255,255,.8
 .st-key-sidepanel { gap: .45rem; }
 .st-key-sidepanel button { min-height: 2rem; padding: .15rem .4rem; }
 .st-key-sidepanel button p { font-size: .78rem; white-space: nowrap; }
+.st-key-myinfo button { justify-content: flex-start; background: #f4f8ff; border-color: #c9dbf5; }
+.st-key-myinfo button p { white-space: normal; text-align: left; font-weight: 600; color: #1f4f8f; }
 .st-key-sidepanel [data-testid="stHorizontalBlock"] { gap: .35rem; }
 [data-testid="stLayoutWrapper"]:has(> .st-key-chatbox), .st-key-chatbox { flex: 0 0 calc(100vh - 18.9rem) !important; height: calc(100vh - 18.9rem) !important; min-height: 240px; }
 .st-key-sidepanel [data-testid="stChatInput"] textarea { font-size: .82rem; }
@@ -119,7 +121,7 @@ if status["mode"].startswith("저장"):
 pills.append(f"<span class='pill {'ok' if _ls['on'] else ''}'>{'AI 연결' if _ls['on'] else 'AI 비상 모드'}</span>")
 st.markdown(f"<h1>⚡ 제주 잉여전력 도우미 {''.join(pills)}</h1>"
             "<div class='sub'>제주 재생에너지가 남는 시간을 미리 알려 드려요. 그 시간에 전기를 쓰면 버려질 전기를 살릴 수 있어요. "
-            "(내 정보·데이터 상태는 왼쪽 위 ▸ 메뉴)</div>", unsafe_allow_html=True)
+            "(데이터 상태는 왼쪽 위 ▸ 메뉴)</div>", unsafe_allow_html=True)
 
 left, right = st.columns([0.79, 0.21], gap="small")
 
@@ -208,7 +210,7 @@ with left:
                 else:
                     st.info("'👤 내 정보'에 동네를 저장하면 가까운 충전소와 길찾기를 보여 드려요.")
             st.markdown("<div class='legend-row'>📍 위치는 이 화면(브라우저) 안에서만 쓰고 서버로 보내거나 저장하지 않아요. "
-                        "위치를 허용하지 않으면 '👤 내 정보'(왼쪽 위 ▸)에 저장한 동네 기준으로 보여 드려요.</div>",
+                        "위치를 허용하지 않으면 '👤 내 정보'(오른쪽 에너지 도우미 맨 위)에 저장한 동네 기준으로 보여 드려요.</div>",
                         unsafe_allow_html=True)
         else:
             st.info("충전소 데이터(허브 862)가 없어 내 주변 지도를 그릴 수 없어요.")
@@ -330,12 +332,56 @@ def _render_evidence(res: dict) -> None:
             st.caption("출처: " + ", ".join(map(str, r.get("sources", []))))
 
 
+def _profile_form() -> None:
+    """내 정보 입력 창 (오른쪽 '에너지 도우미' 맨 위 👤 버튼에서 열림). 휴대폰에서도 늘 보이는 자리."""
+    places = ["선택 안 함"] + [p for p in PLACE_COORDS if p not in ("공항", "시청", "터미널", "도청")]
+    cars = list(up.CARS)
+    with st.form("profile_form"):
+        area = st.selectbox("사는 동네", places, index=places.index(profile["area"]) if profile["area"] in places else 0)
+        car_label = next((k for k, v in up.CARS.items() if v == profile["car"]), cars[0])
+        car = st.selectbox("전기차", cars, index=cars.index(car_label))
+        work = st.checkbox("평일에 출근해요", value=profile["work_start"] is not None)
+        hrs = list(range(0, 25))
+        cs, ce = st.columns(2)
+        ws = cs.selectbox("나가는 시각", hrs, index=profile["work_start"] if profile["work_start"] is not None else 9,
+                          format_func=lambda h: f"{h}시")
+        we = ce.selectbox("돌아오는 시각", hrs, index=profile["work_end"] if profile["work_end"] is not None else 18,
+                          format_func=lambda h: f"{h}시")
+        tou = st.radio("계시별(시간대별) 요금제", up.TOU, index=up.TOU.index(profile["tou"]), horizontal=True)
+        if st.form_submit_button("저장", use_container_width=True):
+            new = up.empty()
+            new["area"] = "" if area == "선택 안 함" else area
+            new["car"] = up.CARS[car]
+            if work and ws < we:
+                new["work_start"], new["work_end"] = int(ws), int(we)
+            new["tou"] = tou
+            st.session_state.profile = new
+            try:
+                st.query_params.from_dict(up.to_query(new))
+            except Exception:
+                pass
+            st.rerun()
+    if up.is_set(profile):
+        st.caption("저장됨: " + up.summary(profile))
+        st.caption("이 페이지 주소를 즐겨찾기하면 다음에도 내 정보가 그대로 불러와져요. 이름·연락처는 받지 않아요.")
+
+
 try:
     side = right.container(key="sidepanel")
 except TypeError:   # 아주 옛날 Streamlit
     side = right.container()
 with side:
     st.markdown("<div class='panel-title'>💬 에너지 도우미</div>", unsafe_allow_html=True)
+    # 👤 내 정보 한 줄: 사이드바는 휴대폰에서 접혀 안 보이므로 대화창 바로 위에 둠
+    _me = up.short(profile)
+    _label = f"👤 {_me}  ✎ 바꾸기" if _me else "👤 내 정보 넣기 (동네·차·출퇴근) — 답이 더 정확해져요"
+    with st.container(key="myinfo"):
+        if hasattr(st, "popover"):
+            with st.popover(_label, use_container_width=True):
+                _profile_form()
+        else:
+            with st.expander(_label, expanded=not _me):
+                _profile_form()
     qa, qb = st.columns(2)
     preset = None
     if qa.button("이번 주 언제가 좋아?", use_container_width=True):
@@ -375,39 +421,9 @@ with chat_box:
                                    mime="text/calendar", key=f"ics_{i}", use_container_width=True)
             _render_evidence(res)
 
-# ================================================================ 사이드바: 내 정보 · 데이터 상태
+# ================================================================ 사이드바: 데이터 상태
 with st.sidebar:
-    with st.expander("👤 내 정보 (한 번 넣으면 질문마다 반영)", expanded=not up.is_set(profile)):
-        places = ["선택 안 함"] + [p for p in PLACE_COORDS if p not in ("공항", "시청", "터미널", "도청")]
-        cars = list(up.CARS)
-        with st.form("profile_form"):
-            area = st.selectbox("사는 동네", places, index=places.index(profile["area"]) if profile["area"] in places else 0)
-            car_label = next((k for k, v in up.CARS.items() if v == profile["car"]), cars[0])
-            car = st.selectbox("전기차", cars, index=cars.index(car_label))
-            work = st.checkbox("평일에 출근해요", value=profile["work_start"] is not None)
-            hrs = list(range(0, 25))
-            cs, ce = st.columns(2)
-            ws = cs.selectbox("나가는 시각", hrs, index=profile["work_start"] if profile["work_start"] is not None else 9,
-                              format_func=lambda h: f"{h}시")
-            we = ce.selectbox("돌아오는 시각", hrs, index=profile["work_end"] if profile["work_end"] is not None else 18,
-                              format_func=lambda h: f"{h}시")
-            tou = st.radio("계시별(시간대별) 요금제", up.TOU, index=up.TOU.index(profile["tou"]), horizontal=True)
-            if st.form_submit_button("저장", use_container_width=True):
-                new = up.empty()
-                new["area"] = "" if area == "선택 안 함" else area
-                new["car"] = up.CARS[car]
-                if work and ws < we:
-                    new["work_start"], new["work_end"] = int(ws), int(we)
-                new["tou"] = tou
-                st.session_state.profile = new
-                try:
-                    st.query_params.from_dict(up.to_query(new))
-                except Exception:
-                    pass
-                st.rerun()
-        if up.is_set(profile):
-            st.caption("저장됨: " + up.summary(profile))
-            st.caption("이 페이지 주소를 즐겨찾기하면 다음에도 내 정보가 그대로 불러와져요. 이름·연락처는 받지 않아요.")
+    st.caption("👤 내 정보는 오른쪽 '에너지 도우미' 맨 위 버튼에서 넣고 바꿀 수 있어요.")
     st.subheader("데이터 상태")
     for k, v in status["available"].items():
         st.write(("✅ " if v else "⬜ ") + k)

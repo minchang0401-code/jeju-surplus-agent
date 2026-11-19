@@ -58,3 +58,10 @@ def test_calendar_from_plan():
 def test_no_calendar_for_non_plan_answers():
     assert pick_window(agent.ask("출력제어가 뭐야?")["trace"]) is None
     assert pick_window(agent.ask("다음 달 크리스마스에 빨래하면 전기가 남아?")["trace"]) is None
+
+
+def test_short_label_for_top_of_chat_panel():
+    import user_profile as up
+    assert up.short(up.empty()) == ""
+    p = up.from_query({"area": "노형", "car": "아이오닉5", "ws": "9", "we": "18", "tou": "가입"})
+    assert up.short(p) == "노형 · 아이오닉5 · 평일 9~18시 · 계시별 요금"
