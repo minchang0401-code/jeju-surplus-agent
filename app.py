@@ -122,6 +122,15 @@ h1 { font-size: 1.55rem !important; margin: 0 !important; padding: 0 !important;
 .mapnote .mn-sub { color:var(--ink2); }
 .legend-row { font-size:.78rem; color:var(--ink2); }
 div[data-testid="stChatMessage"] { padding: .4rem .5rem; }
+/* 휴대폰(좁은 화면): 날짜 카드 5개가 한 줄에 들어가도록 글자를 줄이고 줄바꿈을 막음 */
+@media (max-width: 640px) {
+  .days { gap: 4px; }
+  .day { padding: 3px 2px; }
+  .day .d { font-size: .62rem; white-space: nowrap; }
+  .day .lv { font-size: .78rem; line-height: 1.25; }
+  .day .t { font-size: .58rem; white-space: nowrap; }
+  .pill { font-size: .66rem; padding: 2px 7px; margin-left: 3px; }
+}
 </style>""", unsafe_allow_html=True)
 
 
@@ -546,7 +555,7 @@ if question:
 with chat_box:
     if not st.session_state.history:
         st.chat_message("assistant").markdown(
-            "안녕하세요! 왼쪽 **그래프**에서 재생에너지가 남을 가능성이 높은 시간을 볼 수 있어요.\n\n"
+            "안녕하세요! 지도 아래 **그래프**에서 재생에너지가 남을 가능성이 높은 시간을 볼 수 있어요.\n\n"
             "세탁기·식기세척기·전기차 충전처럼 **시간을 옮길 수 있는 전기 사용**이 있다면 언제가 좋을지 물어보세요.")
     for i, (q_, res) in enumerate(st.session_state.history):
         st.chat_message("user").write(q_)

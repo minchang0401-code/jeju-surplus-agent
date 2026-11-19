@@ -77,6 +77,7 @@ _PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
  a{color:#2a78d6;white-space:nowrap}
  .me{width:16px;height:16px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 1px #888}
  .pop{padding:8px 10px;font-size:13px;line-height:1.5;white-space:nowrap}
+ @media (max-width:520px){ .rlabel,.rlabel-l{font-size:10.5px !important} }
  .rlabel{font-size:12px;font-weight:700;color:#15211d;text-align:center;white-space:pre;text-shadow:0 0 3px #fff,0 0 3px #fff}
  .rlabel-l{background:none;border:none;box-shadow:none;font-size:12px;font-weight:700;color:#15211d;white-space:pre;
    text-shadow:0 0 3px #fff,0 0 3px #fff}
@@ -216,7 +217,11 @@ function makeKakao() {
               if (!pts.length) return;
               const b = new K.LatLngBounds();
               for (const q of pts) b.extend(new K.LatLng(q[0], q[1]));
-              map.setBounds(b);
+              map.setBounds(b, 8, 8, 8, 8);
+              // 휴대폰처럼 좁은 화면: 카카오맵은 확대 단계가 2배씩이라 섬이 화면 절반 크기로 작아짐 → 한 단계 더 확대
+              if (pts.length === 2 && $("map").clientWidth < 520) {
+                const c = b.getCenter(); map.setLevel(map.getLevel() - 1); map.setCenter(c);
+              }
             }
           };
           api.home = function () { map.setLevel(9); map.setCenter(new K.LatLng(33.38, 126.55)); };
@@ -274,7 +279,10 @@ function makeLeaflet() {
         map.setView([lat, lon], 14);
       },
       fit: function (pts) {
-        if (pts.length) map.fitBounds(L.latLngBounds(pts.map(q => [q[0], q[1]])), {padding: [20, 20], maxZoom: 15});
+        if (!pts.length) return;
+        const bb = L.latLngBounds(pts.map(q => [q[0], q[1]]));
+        map.fitBounds(bb, {padding: [8, 8], maxZoom: 15});
+        if (pts.length === 2 && $("map").clientWidth < 520) map.setView(bb.getCenter(), map.getZoom() + 1);   // 좁은 화면은 한 단계 더 확대
       }
     };
   });
