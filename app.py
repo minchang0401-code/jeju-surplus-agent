@@ -126,13 +126,22 @@ div[data-testid="stChatMessage"] { padding: .4rem .5rem; }
 
 
 # 예보가 4시간보다 오래됐으면 새로 받음 (기상청 단기예보는 하루 8번 발표). 30분 동안은 다시 확인하지 않음.
+def _forecast_stamp() -> str:
+    """예보 파일(단기·중기)과 모델이 바뀐 시각. 그래프 캐시 열쇠에 넣어, 새 예보가 들어오면 카드와 그래프가 같은 값을 보이게 함."""
+    from config import FORECAST_HOURLY_CSV, FORECAST_MID_CSV, MODELS
+    fs = (FORECAST_HOURLY_CSV, FORECAST_MID_CSV, MODELS / "surplus_model.joblib")
+    return "|".join(str(int(f.stat().st_mtime)) if f.exists() else "-" for f in fs)
+
+
 @st.cache_data(ttl=1800, show_spinner="최신 기상청 예보를 확인하고 있어요...")
-def _refresh_forecast() -> dict:
+def _refresh_forecast(stamp: str = "") -> dict:
+    """stamp(예보 파일이 바뀐 시각)가 다르면 다시 확인. 코드를 새로 올리면 저장소의 옛 예보 파일로 바뀌는데,
+    그때 30분 캐시 때문에 '최신'이라고 착각하지 않게 함."""
     return refresh_forecast_if_stale()
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def _hourly(today: str) -> pd.DataFrame:
+def _hourly(today: str, stamp: str = "") -> pd.DataFrame:
     from predict import forecast
     from config import MAX_HORIZON_DAYS
     return hourly_frame(forecast(today, MAX_HORIZON_DAYS + 1, log=False))
@@ -157,7 +166,7 @@ def _nearby_data():
     return g, w
 
 
-fresh = _refresh_forecast()
+fresh = _refresh_forecast(_forecast_stamp())
 status = data_status()
 _ls = llm_status()
 
@@ -265,7 +274,7 @@ with left:
             f"<div class='t'>{d['likely_time_text'] if d['likely_hours'] else '-'}</div></div>"
             for d in fc["forecast"])
         _html(f"<div class='days'>{cards}</div>")
-        hourly = _hourly(str(date.today()))
+        hourly = _hourly(str(date.today()), _forecast_stamp())
     except FileNotFoundError:
         st.error("학습된 모델이 없습니다. 먼저 `python train.py` 를 실행하세요.")
         hourly = None
