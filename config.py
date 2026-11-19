@@ -105,4 +105,6 @@ def load_env(path: Path = ROOT / ".env") -> None:
 
 def get_key(name: str) -> str | None:
     load_env()
+    # 심사용: 평가용 LLM 키만 담은 eval.env (제출 ZIP에 포함). .env 에 같은 이름이 있으면 .env 가 우선
+    load_env(ROOT / "eval.env")
     return os.environ.get(name) or None

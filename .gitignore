@@ -1,3 +1,4 @@
 .env
 __pycache__/
 data/forecast_log.csv
+eval.env
