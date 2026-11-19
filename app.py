@@ -34,7 +34,7 @@ except Exception:   # Secrets 파일이 없는 PC 실행이면 .env 를 씀
 st.set_page_config(page_title="제주 잉여전력 도우미", page_icon="⚡", layout="wide", initial_sidebar_state="collapsed")
 st.markdown("""<style>
 /* 한 화면(스크롤 없이)에 맞추기: 지도 높이 = 화면 높이 - 나머지(머리말·카드·버튼·그래프) → 화면이 크면 지도도 커짐 */
-:root { --map-h: clamp(220px, calc(100vh - 300px), 700px); }
+:root { --map-h: clamp(200px, calc(100vh - 452px), 620px); }
 /* 지도 칸 자체의 높이를 정하고(넘치면 잘라서 아래 글과 겹치지 않게) 안의 지도는 그 칸을 꽉 채움 */
 .st-key-mapbox { height: var(--map-h) !important; min-height: var(--map-h); overflow: hidden; flex: 0 0 auto !important; }
 .st-key-mapboxfull { height: calc(var(--map-h) + 54px) !important; min-height: calc(var(--map-h) + 54px); overflow: hidden; flex: 0 0 auto !important; }
@@ -145,13 +145,13 @@ def _hourly_chart(hourly, cur, wins, height: int) -> None:
     """시간별 잉여 가능성 막대그래프 (밤은 회색 배경, 추천 3시간은 초록 띠, 고른 시각은 검은 선)."""
     night = night_bands(hourly)
     x = alt.X("ts:T", title=None, axis=alt.Axis(format="%m/%d %H시", labelAngle=0, tickCount="day", grid=False))
-    y = alt.Y("prob:Q", title="잉여 가능성", scale=alt.Scale(domain=[0, max(0.6, float(hourly["prob"].max()) + .05)]),
+    y = alt.Y("prob:Q", title=None, scale=alt.Scale(domain=[0, max(0.6, float(hourly["prob"].max()) + .05)]),
               axis=alt.Axis(format="%"))
     bg = alt.Chart(night).mark_rect(color="#f1f4f3").encode(x="s:T", x2="e:T")
     bars = alt.Chart(hourly.assign(ts2=hourly["ts"] + pd.Timedelta(minutes=54))).mark_bar().encode(
         x=x, x2="ts2:T", y=y,
         color=alt.Color("level:N", scale=alt.Scale(domain=list(LEVEL_COLOR), range=["#f2a93b", "#3fb37c", "#c3ccd3"]),
-                        legend=alt.Legend(title=None, orient="top-left", direction="horizontal")),
+                        legend=None),   # 색 = 등급(높음 주황·보통 초록·낮음 회색), 위 카드와 같은 색
         tooltip=[alt.Tooltip("label:N", title="시간"), alt.Tooltip("pct:Q", title="가능성(%)"),
                  alt.Tooltip("level:N", title="등급"), alt.Tooltip("basis:N", title="근거")])
     rules = alt.Chart(pd.DataFrame({"y": [0.2, 0.5]})).mark_rule(strokeDash=[4, 4], color="#9aa8a2").encode(y="y:Q")
@@ -204,7 +204,7 @@ with left:
         st.error("학습된 모델이 없습니다. 먼저 `python train.py` 를 실행하세요.")
         hourly = None
 
-    MODES = ["⚡ 잉여 예보", "📈 시간별 그래프", "📍 내 주변", "🔌 충전소 전체"]
+    MODES = ["⚡ 잉여 예보 지도", "📍 내 주변 충전소", "🔌 충전소 전체"]
     MAP_H = 440   # 기본값. 실제 높이는 CSS(--map-h)가 화면 높이에 맞춰 정함
     g, w = _nearby_data()
 
@@ -219,33 +219,30 @@ with left:
         wins, cur, sel = [], None, None
 
     # 지도 고르는 버튼과 지도 설명을 한 줄에 (세로 공간 절약)
-    c_mode, c_note = st.columns([0.52, 0.48], gap="small")
+    c_mode, c_note = st.columns([0.46, 0.54], gap="small")
     with c_mode:
         if hasattr(st, "segmented_control"):
             mode = st.segmented_control("지도", MODES, default=MODES[0], label_visibility="collapsed") or MODES[0]
         else:
             mode = st.radio("지도", MODES, horizontal=True, label_visibility="collapsed")
     with c_note:   # 한 줄 설명 (길면 말줄임, 전체 글은 마우스를 올리면 보임)
-        if mode in MODES[:2] and cur is not None:
+        if cur is not None and mode == MODES[0]:
             # 제주는 전력망(계통)이 하나라 잉여(SMP 0원 이하)도 섬 전체에서 같은 시각에 생김 → 색은 섬 전체 예보 한 값
             _c = prob_color(cur["prob"])
             _why = ("제주는 전력망이 하나라 남는 전기도 섬 전체에서 같은 시각에 생겨요. 그래서 지도의 원 색은 모두 같고, "
                     "원 크기가 권역별 재생에너지 설비(어디서 전기를 많이 만드는지)를 보여 줘요. 아래 슬라이더로 시각을 바꿀 수 있어요.")
             _html(f"<div class='mapnote' title='{_why}'><span class='dot' style='background:rgb({_c[0]},{_c[1]},{_c[2]})'></span>"
                   f"<b>{sel} · 제주에 전기가 남을 가능성 {cur['pct']:.0f}% ({cur['level']})</b> <span class='why'>ⓘ 왜 색이 다 같나요?</span></div>")
-        elif mode == MODES[2]:
+        elif mode == MODES[1]:
             _html("<div class='mapnote' title='위치는 이 화면(브라우저) 안에서만 쓰고 서버로 보내거나 저장하지 않아요. "
                   "허용하지 않거나 제주 밖이면 오른쪽 위 👤 내 정보의 동네로 보여 드려요.'>📍 위치는 이 화면에서만 쓰고 저장하지 않아요 "
                   "<span class='why'>ⓘ</span></div>")
         else:
             _html("<div class='mapnote'>🔌 제주 공용 충전소 전체와 풍력발전소 · 점을 누르면 길찾기</div>")
 
-    with_slider = mode in MODES[:2] and cur is not None
-    box = "graphbox" if mode == MODES[1] else ("mapbox" if with_slider else "mapboxfull")
-    with st.container(key=box):
-        if mode == MODES[1] and cur is not None:
-            _hourly_chart(hourly, cur, wins, 300)
-        elif mode == MODES[0] and cur is not None:
+    with_slider = cur is not None   # 시각 슬라이더와 시간별 그래프는 지도 아래에 늘 보임
+    with st.container(key="mapbox"):
+        if mode == MODES[0] and cur is not None:
             # ---- 잉여 예보 지도: 권역 원(크기 = 재생에너지 설비, 색 = 선택 시각 잉여 가능성) + 급속 충전소 + 풍력발전소
             reg = _regions().copy()
             _c = prob_color(cur["prob"])
@@ -261,7 +258,7 @@ with left:
                                 height=MAP_H)
             except Exception:   # HTML 지도를 못 그리면 pydeck 지도로
                 _surplus_pydeck(reg, q, w, cur, sel, MAP_H)
-        elif mode == MODES[2]:
+        elif mode == MODES[1]:
             # ---- 내 주변 충전소: GPS(브라우저 안에서만) → 저장한 동네 → 카카오맵 길찾기
             home = None
             if profile.get("area") in PLACE_COORDS:
@@ -300,6 +297,7 @@ with left:
         st.select_slider("지도·그래프 시각", options=hourly["label"].tolist(), value=sel, key="sel_time",
                          label_visibility="collapsed",
                          format_func=lambda l: f"{l} · 전기가 남을 가능성 {_p[l][0]:.0f}% ({_p[l][1]})")
+        _hourly_chart(hourly, cur, wins, 112)
     if cur is not None:
         _src = "출처: " + ", ".join(fc["sources"]) + " · " + fc["note"]
         if wins:
@@ -401,11 +399,12 @@ def _render_evidence(res: dict) -> None:
             st.caption("출처: " + ", ".join(map(str, r.get("sources", []))))
 
 
-def _profile_form() -> None:
-    """내 정보 입력 창 (오른쪽 '에너지 도우미' 맨 위 👤 버튼에서 열림). 휴대폰에서도 늘 보이는 자리."""
+def _profile_form(where: str = "panel") -> None:
+    """내 정보 입력 창. 오른쪽 '에너지 도우미' 맨 위 👤 버튼(where="panel")과 사이드바(where="side") 두 곳에 있고,
+    어느 쪽에서 저장해도 같은 내 정보로 반영됨."""
     places = ["선택 안 함"] + [p for p in PLACE_COORDS if p not in ("공항", "시청", "터미널", "도청")]
     cars = list(up.CARS)
-    with st.form("profile_form"):
+    with st.form(f"profile_form_{where}"):
         area = st.selectbox("사는 동네", places, index=places.index(profile["area"]) if profile["area"] in places else 0)
         car_label = next((k for k, v in up.CARS.items() if v == profile["car"]), cars[0])
         car = st.selectbox("전기차", cars, index=cars.index(car_label))
@@ -447,10 +446,10 @@ with side:
     with st.container(key="myinfo"):
         if hasattr(st, "popover"):
             with st.popover(_label, use_container_width=True):
-                _profile_form()
+                _profile_form("panel")
         else:
             with st.expander(_label, expanded=not _me):
-                _profile_form()
+                _profile_form("panel")
     qa, qb = st.columns(2)
     preset = None
     if qa.button("이번 주 언제가 좋아?", use_container_width=True):
@@ -492,11 +491,11 @@ with chat_box:
 
 # ================================================================ 사이드바: 데이터 상태
 with st.sidebar:
-    st.caption("👤 내 정보는 오른쪽 '에너지 도우미' 맨 위 버튼에서 넣고 바꿀 수 있어요.")
+    with st.expander("👤 내 정보 (한 번 넣으면 질문마다 반영)", expanded=not up.is_set(profile)):
+        _profile_form("side")
     st.subheader("데이터 상태")
     for k, v in status["available"].items():
         st.write(("✅ " if v else "⬜ ") + k)
-    st.caption("허브 = 제주데이터허브 (대회 필수 데이터)")
     st.caption(("🟢 " if _ls["on"] else "⚪ ") + _ls["text"])
     _mid = {"fresh": "받음", "updated": "방금 새로 받음", "failed": "받지 못함 → 3~5일 뒤는 참고치", "no_key": "키 없음"}
     if fresh.get("mid"):
