@@ -53,20 +53,19 @@ header[data-testid="stHeader"] { height: 2.4rem; background: rgba(255,255,255,.8
 .st-key-sidepanel { gap: .45rem; }
 .st-key-sidepanel button { min-height: 2rem; padding: .15rem .4rem; }
 .st-key-sidepanel button p { font-size: .78rem; white-space: nowrap; }
-.st-key-myinfo { gap: .25rem; background: #f6f9fd; }
-.st-key-myinfo button { min-height: 1.6rem; padding: 0 .4rem; }
-.me-title { font-weight: 700; font-size: .92rem; color: #1f4f8f; }
-.me-grid { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: .8rem; line-height: 1.35; }
-.me-grid .k { color: #6b7a75; }
-.me-grid .v { color: #15211d; font-weight: 600; }
-.me-grid .v.empty { color: #a3aea9; font-weight: 400; }
-.me-hint { font-size: .74rem; color: #6b7a75; margin-top: 3px; }
+.st-key-myinfo { gap: .2rem; background: #f6f9fd; padding: .45rem .6rem !important; }
+.st-key-myinfo [data-testid="stHorizontalBlock"] { gap: .3rem; }
+.st-key-myinfo [data-baseweb="select"] > div { min-height: 1.85rem; font-size: .8rem; padding-top: 0; padding-bottom: 0; }
+.st-key-myinfo [data-baseweb="select"] div { line-height: 1.2; }
+.me-title { font-weight: 700; font-size: .92rem; color: #1f4f8f; margin-bottom: .1rem; }
+.me-note { font-weight: 400; font-size: .7rem; color: #8a9893; margin-left: 4px; }
+.me-k { color: #5b6b66; font-size: .78rem; white-space: nowrap; }
 .st-key-chatpanel { gap: .35rem; }
 .st-key-quickq { gap: .3rem; }
 .st-key-quickq button { min-height: 1.75rem; border-radius: 999px; background: #f4f7f6; }
 .st-key-quickq button p { font-size: .74rem; }
 .st-key-sidepanel [data-testid="stHorizontalBlock"] { gap: .35rem; }
-[data-testid="stLayoutWrapper"]:has(> .st-key-chatbox), .st-key-chatbox { flex: 0 0 calc(100vh - 25rem) !important; height: calc(100vh - 25rem) !important; min-height: 200px; }
+[data-testid="stLayoutWrapper"]:has(> .st-key-chatbox), .st-key-chatbox { flex: 0 0 calc(100vh - 29.5rem) !important; height: calc(100vh - 29.5rem) !important; min-height: 200px; }
 .st-key-sidepanel [data-testid="stChatInput"] textarea { font-size: .82rem; }
 h1 { font-size: 1.55rem !important; margin: 0 !important; padding: 0 !important; }
 .sub { color: #5b6b66; font-size: .9rem; margin-top: .1rem; }
@@ -449,29 +448,61 @@ try:
 except TypeError:   # 아주 옛날 Streamlit
     side = right.container()
 with side:
-    # ---- 위: 👤 내 정보 (늘 펼쳐서 표시, 수정은 ✎ 버튼)
-    import html as _h
-    _rows = [("동네", profile.get("area") or ""),
-             ("전기차", profile.get("car") or ""),
-             ("출퇴근", f"평일 {profile['work_start']}~{profile['work_end']}시 집에 없음"
-                        if profile.get("work_start") is not None else ""),
-             ("요금제", "" if profile.get("tou") in (None, "모름") else f"계시별 {profile['tou']}")]
+    # ---- 위: 👤 내 정보 — 칸마다 바로 고르면 그 자리에서 저장 (모달 없음)
+    _PLACES = ["선택 안 함"] + [p_ for p_ in PLACE_COORDS if p_ not in ("공항", "시청", "터미널", "도청")]
+    _CARS = list(up.CARS)
+    _OUT = ["집에 있음"] + [f"{h}시" for h in range(0, 24)]
+    _IN = [f"{h}시" for h in range(1, 25)]
+    _TOU = {"모름": "모름", "가입": "계시별 가입", "미가입": "미가입"}
+
+    def _me_sync() -> None:
+        """현재 내 정보 → 칸 값 (사이드바에서 바꿔도 같은 값이 보이도록 매번 맞춤)"""
+        p_ = st.session_state.profile
+        st.session_state.me_area = p_["area"] if p_["area"] in _PLACES else "선택 안 함"
+        st.session_state.me_car = next((k for k, v in up.CARS.items() if v == p_["car"]), _CARS[0])
+        st.session_state.me_out = f"{p_['work_start']}시" if p_["work_start"] is not None else "집에 있음"
+        st.session_state.me_in = f"{p_['work_end']}시" if p_["work_end"] is not None else "18시"
+        st.session_state.me_tou = p_["tou"] if p_["tou"] in _TOU else "모름"
+
+    def _me_save() -> None:
+        """칸 값 → 내 정보 저장 + 주소창(즐겨찾기용)"""
+        ss = st.session_state
+        new_ = up.empty()
+        new_["area"] = "" if ss.me_area == "선택 안 함" else ss.me_area
+        new_["car"] = up.CARS[ss.me_car]
+        if ss.me_out != "집에 있음":
+            ws_, we_ = int(ss.me_out[:-1]), int(ss.me_in[:-1])
+            if ws_ < we_:
+                new_["work_start"], new_["work_end"] = ws_, we_
+            else:
+                st.toast("돌아오는 시각은 나가는 시각보다 늦어야 해요.")
+                new_["work_start"], new_["work_end"] = profile["work_start"], profile["work_end"]
+        new_["tou"] = ss.me_tou
+        ss.profile = new_
+        try:
+            st.query_params.from_dict(up.to_query(new_))
+        except Exception:
+            pass
+
+    _me_sync()
     with st.container(key="myinfo", border=True):
-        ct, ce = st.columns([0.62, 0.38], vertical_alignment="center")
-        ct.markdown("<div class='me-title'>👤 내 정보</div>", unsafe_allow_html=True)
-        with ce:
-            if hasattr(st, "popover"):
-                with st.popover("✎ 수정", use_container_width=True):
-                    _profile_form("panel")
-            elif st.button("✎ 수정", use_container_width=True):
-                st.session_state.show_form = not st.session_state.get("show_form", False)
-        if not hasattr(st, "popover") and st.session_state.get("show_form"):
-            _profile_form("panel")
-        st.markdown("<div class='me-grid'>" + "".join(
-            f"<span class='k'>{k}</span><span class='v{'' if v else ' empty'}'>{_h.escape(v) if v else '안 넣음'}</span>"
-            for k, v in _rows) + "</div>"
-            + ("" if up.is_set(profile) else "<div class='me-hint'>넣어 두면 답이 내 동네·차·생활에 맞춰져요.</div>"),
-            unsafe_allow_html=True)
+        st.markdown("<div class='me-title'>👤 내 정보 <span class='me-note'>고르면 바로 반영돼요</span></div>",
+                    unsafe_allow_html=True)
+
+        def _row(label: str):
+            c1, c2 = st.columns([0.27, 0.73], vertical_alignment="center")
+            c1.markdown(f"<span class='me-k'>{label}</span>", unsafe_allow_html=True)
+            return c2
+
+        _row("동네").selectbox("동네", _PLACES, key="me_area", on_change=_me_save, label_visibility="collapsed")
+        _row("전기차").selectbox("전기차", _CARS, key="me_car", on_change=_me_save, label_visibility="collapsed")
+        c1, wa, wb = st.columns([0.27, 0.365, 0.365], vertical_alignment="center")   # 열 안에 열을 또 넣지 않음
+        c1.markdown("<span class='me-k'>출퇴근</span>", unsafe_allow_html=True)
+        wa.selectbox("나가는 시각", _OUT, key="me_out", on_change=_me_save, label_visibility="collapsed")
+        wb.selectbox("돌아오는 시각", _IN, key="me_in", on_change=_me_save, label_visibility="collapsed",
+                     disabled=st.session_state.me_out == "집에 있음")
+        _row("요금제").selectbox("요금제", list(_TOU), key="me_tou", on_change=_me_save,
+                               format_func=lambda k: _TOU[k], label_visibility="collapsed")
 
     # ---- 아래: 💬 에너지 도우미 (대화 → 예시 질문 → 입력창)
     with st.container(key="chatpanel", border=True):
