@@ -49,7 +49,7 @@ _PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
 <script>
 const D = __DATA__;
 const P = D.p, W = D.w, HOME = D.home, KKEY = D.kakao_key, MODE = D.mode || "near";
-let quickOnly = false, eng = null, last = null;
+let quickOnly = false, eng = null, last = null, touched = false;
 const $ = (id) => document.getElementById(id);
 function say(t) { $("msg").textContent = t; }
 function km(a, b, c, d) {
@@ -77,7 +77,19 @@ function loadScript(src) {
     document.head.appendChild(s);
   });
 }
-function watchResize(fn) { if (window.ResizeObserver) new ResizeObserver(fn).observe($("map")); }
+// 탭 안에 숨겨진 채로 지도가 만들어지면 크기가 0이라 위치가 엉뚱해짐(예: 일본이 보임).
+// 크기가 바뀌거나 화면에 보이게 될 때마다 지도를 다시 맞추고, 사용자가 지도를 움직이기 전까지는 다시 제주에 맞춤.
+function watchResize(fn) {
+  const again = function () {
+    if (!$("map").clientWidth) return;
+    fn();
+    if (eng && !touched) { if (MODE !== "near") eng.fit(fitPoints()); else if (last) eng.me.apply(null, last); else eng.home(); }
+  };
+  if (window.ResizeObserver) new ResizeObserver(again).observe($("map"));
+  if (window.IntersectionObserver) new IntersectionObserver(function (es) { if (es.some(e => e.isIntersecting)) again(); }).observe($("map"));
+  if (window.addEventListener) window.addEventListener("resize", again);
+  [300, 1000, 2500].forEach(function (t) { setTimeout(again, t); });
+}
 
 // ---------- 카카오맵
 function makeKakao() {
@@ -133,6 +145,8 @@ function makeKakao() {
               map.setBounds(b);
             }
           };
+          api.home = function () { map.setLevel(9); map.setCenter(new K.LatLng(33.38, 126.55)); };
+          K.event.addListener(map, "dragstart", function () { touched = true; });
           watchResize(function () { map.relayout(); });
           ok(api);
         } catch (e) { bad(e); }
@@ -161,8 +175,10 @@ function makeLeaflet() {
       L.circleMarker([w[0], w[1]], {radius: 5 + Math.sqrt(w[2]) * 1.2, weight: 1, color: "#fff", fillColor: "#eb6834",
         fillOpacity: 0.85}).bindTooltip("풍력발전소 " + w[2] + "MW").addTo(map);
     }
+    map.on("dragstart", function () { touched = true; });
     watchResize(function () { map.invalidateSize(); });
     return {
+      home: function () { map.setView([33.38, 126.55], 10); },
       name: "OpenStreetMap",
       draw: function () {
         layer.clearLayers();
@@ -253,7 +269,7 @@ function ready(api) {
   eng = api; eng.draw();
   $("engine").textContent = "지도: " + api.name;
   if (last) eng.me.apply(null, last);
-  if (MODE !== "near") eng.fit(fitPoints());   // 제주 전체·답변 지도는 점이 모두 보이게 맞춤
+  if (MODE !== "near" && $("map").clientWidth) eng.fit(fitPoints());   // 제주 전체·답변 지도는 점이 모두 보이게 맞춤
 }
 function noMap() {
   $("map").style.display = "none";
