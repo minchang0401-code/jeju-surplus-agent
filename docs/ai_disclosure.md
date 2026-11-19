@@ -60,6 +60,8 @@
 | joblib | 모델 저장·불러오기 | BSD-3-Clause |
 | requests | API 호출 | Apache-2.0 |
 | Streamlit | 웹 화면 | Apache-2.0 |
+| Altair (Streamlit에 함께 설치) | 시간별 잉여 가능성 그래프 | BSD-3-Clause |
+| pydeck (Streamlit에 함께 설치) | 잉여 예보 지도(권역 원·충전소·풍력발전소) | Apache-2.0 |
 | matplotlib | 그림 그리기 (`experiments/`, 선택) | Matplotlib License (PSF 기반) |
 | pytest | 자동 시험 (`tests/`, 선택) | MIT |
 | 지도 배경 (Streamlit `st.map`) | 화면 지도가 그려지지 않을 때의 예비 지도 | 배경 지도 © OpenStreetMap contributors, © CARTO (화면에 표시됨) |
@@ -78,7 +80,8 @@
 | 가져온 것 | 원래 위치 | 이 프로젝트에서 |
 |---|---|---|
 | 한국전력거래소 공개 파일(출력제어·수요·연계선·플러스 DR), 풍력발전소 대략 좌표 | 팀원 B `JEJU_SURPLUS_FORECAST/data/raw`, `data/reference/wind_farms.csv` | `data/grid_raw/`, `grid.py`, 화면 지도 |
-| 지도 표시 아이디어 | 팀원 B `dashboard/index.html` | `app.py` '지도로 보기'·`nearby_map.py` (카카오맵 → OpenStreetMap, 코드는 새로 작성) |
+| 지도 표시 아이디어 | 팀원 B `dashboard/index.html` | `app.py` 지도 3종·`nearby_map.py` (카카오맵 → OpenStreetMap, 코드는 새로 작성) |
+| 화면 개편: 왼쪽 예보·지도 3종·시간별 그래프와 슬라이더, 오른쪽 에너지 도우미 대화 패널, 권역별 설비용량 지도 | 팀원 (2026-11-19, 이 저장소에 직접 반영) | `app.py`, `dashboard_view.py`, `tests/test_dashboard_view.py` |
 | 시간 제약 안에서 계획하기 | 팀원 C `TIMEFLOW_JEJU_MVP/timeflow/optimizer.py` | `tools.plan_appliance_use`의 출근·외출 일정 반영 (코드는 새로 작성) |
 | 평가기준 대응표 형식 | 팀원 C `docs/EVALUATION_MAPPING.md` | `docs/evaluation_mapping.md` |
 | pytest 자동 시험 방식 | 팀원 C `tests/`, `pytest.ini` | `tests/` (시험 내용은 새로 작성) |
