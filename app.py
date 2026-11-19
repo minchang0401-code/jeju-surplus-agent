@@ -66,7 +66,7 @@ st.markdown(f"""<style>:root {{
 }}</style>""", unsafe_allow_html=True)
 st.markdown("""<style>
 /* 한 화면(스크롤 없이)에 맞추기: 지도 높이 = 화면 높이 - 나머지(머리말·카드·버튼·그래프) → 화면이 크면 지도도 커짐 */
-:root { --map-h: clamp(200px, calc(100vh - 452px), 620px); }
+:root { --map-h: clamp(200px, calc(100vh - 459px), 620px); }
 /* 지도 칸 자체의 높이를 정하고(넘치면 잘라서 아래 글과 겹치지 않게) 안의 지도는 그 칸을 꽉 채움 */
 .st-key-mapbox { height: var(--map-h) !important; min-height: var(--map-h); overflow: hidden; flex: 0 0 auto !important; }
 .st-key-mapboxfull { height: calc(var(--map-h) + 54px) !important; min-height: calc(var(--map-h) + 54px); overflow: hidden; flex: 0 0 auto !important; }
@@ -386,7 +386,7 @@ with left:
                   f"<span class='chip sel'>선택 {sel} · 남을 가능성 {cur['pct']:.0f}% ({cur['level']})</span>"
                   f"<span class='sep'>|</span><span class='lbl'>{cand_lbl}</span>{chips}"
                   f"<span class='info' title='{_src} · 그래프를 누르거나 끌면 그 시각으로 지도가 바뀌어요'>ⓘ 출처·안내</span></div>")
-            if not _hourly_chart(hourly, cur, wins, 150):   # 옛 Streamlit 이면 슬라이더로 대신
+            if not _hourly_chart(hourly, cur, wins, 180):   # 옛 Streamlit 이면 슬라이더로 대신
                 _p = dict(zip(hourly["label"], zip(hourly["pct"], hourly["level"])))
                 st.select_slider("지도·그래프 시각", options=hourly["label"].tolist(), value=sel, key="sel_time",
                                  label_visibility="collapsed",
