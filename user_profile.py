@@ -1,6 +1,6 @@
 """내 정보 — 동네·차종·출퇴근·요금제를 한 번 넣으면 질문마다 기본값으로 씀.
 
-화면(app.py)은 내 정보를 주소창(URL)에 담아 두므로, 그 주소를 즐겨찾기하면 다음에도 그대로 불러옵니다.
+게스트의 내 정보는 현재 Streamlit 세션 동안 유지됩니다. 기존 공유 주소의 설정을 읽는 변환 함수도 제공합니다.
 개인 이름·연락처는 받지 않습니다 (동네는 대표 지명 수준).
 """
 from __future__ import annotations
@@ -96,7 +96,7 @@ def apply_defaults(steps: list[tuple[str, dict]], question: str, p: dict | None)
     if not is_set(p):
         return steps
     q = (question or "").replace(" ", "")
-    mentions_time = any(w in q for w in ("출근", "퇴근", "외출", "부터", "까지"))
+    mentions_away = any(w in q for w in ("출근", "퇴근", "외출", "집에없", "나가", "밖에", "일하", "약속"))
     out = []
     for name, args in steps:
         args = dict(args)
@@ -108,7 +108,7 @@ def apply_defaults(steps: list[tuple[str, dict]], question: str, p: dict | None)
         if name == "plan_appliance_use":
             if (args.get("appliance") == "전기차" or "전기차" in str(args.get("appliance"))) and not args.get("car") and p.get("car"):
                 args["car"] = p["car"]
-            if args.get("away_start") is None and not mentions_time and p.get("work_start") is not None:
+            if args.get("away_start") is None and not mentions_away and p.get("work_start") is not None:
                 args.update({"away_start": p["work_start"], "away_end": p["work_end"], "away_weekdays_only": True})
         out.append((name, args))
     return out

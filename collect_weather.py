@@ -22,6 +22,8 @@
 """
 from __future__ import annotations
 
+from time_utils import as_kst, now_kst, today_kst
+
 import argparse
 from datetime import date, datetime, timedelta
 
@@ -160,7 +162,7 @@ def _to_label_hours(df: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------- 단기예보
 def _latest_base(now: datetime) -> tuple[str, str]:
     bases = [2, 5, 8, 11, 14, 17, 20, 23]
-    ref = now - timedelta(minutes=15)  # 발표 후 약 10분 뒤부터 조회 가능
+    ref = as_kst(now) - timedelta(minutes=15)  # 발표 후 약 10분 뒤부터 조회 가능
     cands = [h for h in bases if h <= ref.hour]
     if cands:
         return ref.strftime("%Y%m%d"), f"{cands[-1]:02d}00"
@@ -181,7 +183,7 @@ def collect_forecast(now: datetime | None = None) -> pd.DataFrame:
     key = get_key("DATA_GO_KR_KEY")
     if not key:
         raise RuntimeError("DATA_GO_KR_KEY 가 .env 에 없습니다.")
-    base_date, base_time = _latest_base(now or datetime.now())
+    base_date, base_time = _latest_base(now or now_kst())
     items = []
     for name, (nx, ny) in KMA_FCST_GRIDS.items():
         params = {"serviceKey": key, "pageNo": 1, "numOfRows": 1500, "dataType": "JSON",
@@ -224,7 +226,7 @@ def collect_forecast(now: datetime | None = None) -> pd.DataFrame:
 
 
 def _mid_tmfc(now: datetime) -> str:
-    ref = now - timedelta(minutes=30)   # 발표 뒤 조금 지나야 조회됨
+    ref = as_kst(now) - timedelta(minutes=30)   # 발표 뒤 조금 지나야 조회됨
     if ref.hour >= 18:
         return ref.strftime("%Y%m%d") + "1800"
     if ref.hour >= 6:
@@ -268,7 +270,7 @@ def collect_mid(now: datetime | None = None) -> pd.DataFrame:
     key = get_key("DATA_GO_KR_KEY")
     if not key:
         raise RuntimeError("DATA_GO_KR_KEY 가 .env 에 없습니다.")
-    tmfc = _mid_tmfc(now or datetime.now())
+    tmfc = _mid_tmfc(now or now_kst())
     out = parse_mid(_mid_item(MID_LAND_URL, key, MID_LAND_REG, tmfc), _mid_item(MID_TA_URL, key, MID_TA_REG, tmfc), tmfc)
     if out.empty:
         raise RuntimeError("중기예보에 쓸 날짜가 없습니다.")
@@ -282,7 +284,7 @@ def refresh_mid_if_stale(max_age_hours: float = 12.0) -> str:
     try:
         if FORECAST_MID_CSV.exists():
             base = str(pd.read_csv(FORECAST_MID_CSV, usecols=["base"], dtype=str)["base"].iloc[0])
-            if (datetime.now() - datetime.strptime(base[:12], "%Y%m%d%H%M")).total_seconds() / 3600 < max_age_hours:
+            if (now_kst() - datetime.strptime(base[:12], "%Y%m%d%H%M")).total_seconds() / 3600 < max_age_hours:
                 return "fresh"
         if not get_key("DATA_GO_KR_KEY"):
             return "no_key"
@@ -309,7 +311,7 @@ def refresh_forecast_if_stale(max_age_hours: float = 4.0) -> dict:
     반환 status: fresh(아직 새것) / updated(새로 받음) / no_key(키 없음) / failed(받기 실패)"""
     mid = refresh_mid_if_stale()   # 3~5일 뒤용 중기예보 (실패해도 계속)
     issued = forecast_issued_at()
-    age = None if issued is None else (datetime.now() - issued).total_seconds() / 3600
+    age = None if issued is None else (now_kst() - issued).total_seconds() / 3600
     info = {"issued_at": issued.strftime("%Y-%m-%d %H:%M") if issued else None,
             "age_hours": None if age is None else round(age, 1)}
     info["mid"] = mid
@@ -326,7 +328,7 @@ def refresh_forecast_if_stale(max_age_hours: float = 4.0) -> dict:
         return {"status": "failed", "error": type(e).__name__, **info}
     issued = forecast_issued_at()
     return {"status": "updated", "mid": mid, "issued_at": issued.strftime("%Y-%m-%d %H:%M") if issued else None,
-            "age_hours": 0.0 if issued is None else round((datetime.now() - issued).total_seconds() / 3600, 1)}
+            "age_hours": 0.0 if issued is None else round((now_kst() - issued).total_seconds() / 3600, 1)}
 
 
 def main() -> None:
@@ -334,7 +336,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
     h = sub.add_parser("history")
     h.add_argument("--start", default="2024-06-01")
-    h.add_argument("--end", default=str(date.today() - timedelta(days=1)))
+    h.add_argument("--end", default=str(today_kst() - timedelta(days=1)))
     h.add_argument("--debug", action="store_true")
     sub.add_parser("forecast")
     sub.add_parser("mid")

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>이용 안내 표시 설정</title>
+<style>html,body{margin:0;height:0;overflow:hidden}</style></head><body>
+<script>
+(() => {
+  const key = 'jeju.energy.onboarding.hide.v1';
+  let sent = '', written = '';
+  function send(type, payload = {}) {
+    window.parent.postMessage({ isStreamlitMessage: true, type, ...payload }, '*');
+  }
+  window.addEventListener('message', event => {
+    if (event.source !== window.parent || event.data?.type !== 'streamlit:render') return;
+    const { hidden, revision = '' } = event.data.args || {};
+    let saved = false, available = true;
+    try {
+      if (typeof hidden === 'boolean' && written !== revision) {
+        if (hidden) localStorage.setItem(key, '1'); else localStorage.removeItem(key);
+        written = revision;
+      }
+      saved = localStorage.getItem(key) === '1';
+    } catch (_) {
+      available = false;
+      saved = typeof hidden === 'boolean' ? hidden : false;
+    }
+    const value = { ready: true, hidden: saved, available, revision };
+    const serialized = JSON.stringify(value);
+    if (serialized !== sent) {
+      sent = serialized;
+      send('streamlit:setComponentValue', { value, dataType: 'json' });
+    }
+    send('streamlit:setFrameHeight', { height: 0 });
+  });
+  send('streamlit:componentReady', { apiVersion: 1 });
+  send('streamlit:setFrameHeight', { height: 0 });
+})();
+</script></body></html>

@@ -9,6 +9,8 @@
 """
 from __future__ import annotations
 
+from time_utils import as_kst, now_kst, today_kst
+
 import argparse
 from datetime import date, datetime, timedelta
 from functools import lru_cache
@@ -48,7 +50,7 @@ def load_bundle() -> dict:
 def forecast(start: str | None = None, days: int = MAX_HORIZON_DAYS, log: bool = True) -> pd.DataFrame:
     bundle = load_bundle()
     history = load_labels()
-    start = start or str(date.today() + timedelta(days=1))
+    start = start or str(today_kst() + timedelta(days=1))
     frame = build_future_frame(start, days, history)
     frame["model_used"] = "calendar"
     frame["prob"] = bundle["models"]["calendar"].predict_proba(
@@ -68,15 +70,16 @@ def forecast(start: str | None = None, days: int = MAX_HORIZON_DAYS, log: bool =
         if has_mid.any():
             frame.loc[has_mid, "prob"] = bundle["models"]["mid"].predict_proba(frame.loc[has_mid, feats])[:, 1]
             frame.loc[has_mid, "model_used"] = "mid"
+    frame["trend_available"] = frame[["recent_surplus_days", "recent_surplus_hours_same_hour"]].notna().all(axis=1)
     frame["level"] = frame["prob"].map(level_of)
-    out = frame[["date", "hour", "prob", "level", "model_used"]].copy()
+    out = frame[["date", "hour", "prob", "level", "model_used", "trend_available"]].copy()
     if log:
         _log(out)
     return out
 
 
 def _log(fc: pd.DataFrame) -> None:
-    rec = fc.assign(issued_at=datetime.now().isoformat(timespec="minutes"))
+    rec = fc[["date", "hour", "prob", "level", "model_used"]].assign(issued_at=now_kst().isoformat(timespec="seconds"))
     rec["date"] = rec["date"].dt.strftime("%Y-%m-%d")
     header = not PREDICTION_LOG.exists()
     rec.to_csv(PREDICTION_LOG, mode="a", header=header, index=False, encoding="utf-8")

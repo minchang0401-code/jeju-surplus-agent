@@ -12,6 +12,8 @@
 """
 from __future__ import annotations
 
+from time_utils import as_kst, now_kst, today_kst
+
 import inspect
 import json
 import re
@@ -27,7 +29,7 @@ from tools import TOOL_SPECS, TOOLS
 
 def _system_prompt(profile: dict | None = None) -> str:
     """질문할 때마다 오늘 날짜·이번 주/다음 주 범위를 새로 넣음 (서버가 며칠씩 켜져 있어도 날짜가 맞도록)."""
-    now = datetime.now()
+    now = now_kst()
     today = now.date()
     mon = today - timedelta(days=today.weekday())
     wd = "월화수목금토일"
@@ -63,6 +65,7 @@ def _system_prompt(profile: dict | None = None) -> str:
   전기차 질문이면 participation 의 플러스 DR 문장도 반드시 한 문장으로 줄여 함께 말한다(예: "제주는 남을 때 쓰면 보상하는 플러스 DR을 2021년 전국 처음 도입했어요. 지금 개인 참여가 되는지는 제주도·한전에 확인해 보세요.").
   내 정보가 계시별 요금제 '가입'이면 "가입하셨으니 이 낮 시간이 저녁보다 요금도 싸요"처럼 한 문장만 말하고 가입 권유는 뺀다.
   evening_note 에서 요금 이야기를 이미 했으면 되풀이하지 않는다. 플러스 DR은 '2021년 시범사업이 있었고 지금 참여 가능 여부는 확인 필요'라는 점을 바꾸지 않는다.
+- 도구 결과에 warnings가 있으면 자료 부족 안내를 답에 함께 전달한다.
 - 시간대를 말할 때는 가능성 등급(높음·보통·낮음)을 꼭 함께 말한다. 등급이 '낮음'인 때를 '좋다'고만 말하지 않는다.
 - plan_appliance_use 결과에 better_option 이 있으면 반드시 그 날짜·시간대·등급을 함께 알려 준다
   (예: "내일은 가능성이 낮아요. 일요일 12시~14시는 '보통'이라 더 나아요.").
@@ -113,6 +116,13 @@ def llm_status() -> dict:
         return {"on": False, "text": "AI(LLM) 꺼짐 — LLM_API_KEY 가 없어요"}
     cfg = _llm_config()
     return {"on": True, "text": f"AI(LLM) 연결: {provider} · {cfg['model']}"}
+
+
+def _personalized_tool_inputs(name, args, question, profile):
+    args = dict(args or {})
+    if name == "plan_appliance_use" and "target" in args and not args.get("appliance"):
+        args["appliance"] = args.pop("target")
+    return apply_defaults([(name, args)], question, profile)[0]
 
 
 def _run_tool(name: str, args: dict) -> dict:
@@ -186,8 +196,9 @@ def _chat_openai(cfg: dict, question: str, trace: list, history: list | None = N
         msgs.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
         for c in calls:
             args = json.loads(c["function"].get("arguments") or "{}")
-            result = _run_tool(c["function"]["name"], args)
-            trace.append({"tool": c["function"]["name"], "args": args, "result": result})
+            name, args = _personalized_tool_inputs(c["function"]["name"], args, question, profile)
+            result = _run_tool(name, args)
+            trace.append({"tool": name, "args": args, "result": result})
             msgs.append({"role": "tool", "tool_call_id": c["id"],
                          "content": json.dumps(result, ensure_ascii=False, default=str)[:12000]})
     return "질문을 처리하는 데 단계가 너무 많이 필요했어요. 조금 더 짧게 물어봐 주세요."
@@ -209,8 +220,9 @@ def _chat_anthropic(cfg: dict, question: str, trace: list, history: list | None 
         msgs.append({"role": "assistant", "content": body["content"]})
         results = []
         for u in uses:
-            result = _run_tool(u["name"], u.get("input") or {})
-            trace.append({"tool": u["name"], "args": u.get("input"), "result": result})
+            name, args = _personalized_tool_inputs(u["name"], u.get("input") or {}, question, profile)
+            result = _run_tool(name, args)
+            trace.append({"tool": name, "args": args, "result": result})
             results.append({"type": "tool_result", "tool_use_id": u["id"],
                             "content": json.dumps(result, ensure_ascii=False, default=str)[:12000]})
         msgs.append({"role": "user", "content": results})
@@ -243,8 +255,23 @@ def _guess_time(question: str) -> tuple[int | None, int | None]:
     q = question.replace(" ", "")
     # 출퇴근·외출 시각은 '쓰고 싶은 때'가 아니므로 빼고 봄 (_guess_away 가 따로 처리)
     q = re.sub(r"(오전|오후)?\d{1,2}시(?:에|까지)?(출근|퇴근)", "", q)
-    q = re.sub(r"(오전|오후)?\d{1,2}시부터(오전|오후)?\d{1,2}시까지", "", q)
+    away_range = r"(?:오전|오후)?\d{1,2}시부터(?:오전|오후)?\d{1,2}시까지"
+    away_words = r"(?:외출|나가|집에없|밖에|일하|약속)"
+    q = re.sub(away_range + r"(?:동안|에는|는|에)?" + away_words, "", q)
+    q = re.sub(away_words + r"(?:은|는|이|시간은|시간이)?" + away_range, "", q)
     q = q.replace("출근", "").replace("퇴근", "")
+    # 사용 희망 구간의 양 끝을 모두 보존한다. 외출 구간만 위에서 제거한다.
+    span = re.search(r"(오전|오후|저녁|밤|낮|아침|새벽)?(\d{1,2})시(?:부터|~|∼|-)(오전|오후|저녁|밤|낮|아침|새벽)?(\d{1,2})시(?:까지|사이)?", q)
+    if span:
+        def clock_hour(label, value):
+            h = int(value)
+            if label in ("오후", "저녁", "밤") and h < 12:
+                return h + 12
+            return 0 if label == "오전" and h == 12 else h
+        start = clock_hour(span.group(1), span.group(2))
+        end = clock_hour(span.group(3) or span.group(1), span.group(4))
+        if 0 <= start < end <= 24:
+            return start, end
     m = re.search(r"(오전|오후|저녁|밤|낮|아침|새벽)?(\d{1,2})시", q)
     if m:
         h = int(m.group(2))
@@ -314,7 +341,7 @@ def _guess_day(question: str) -> str:
     for w in "월화수목금토일":
         if f"{w}요일" in q:
             return w
-    today = date.today()
+    today = today_kst()
     for word, plus in (("모레", 2), ("내일", 1), ("오늘", 0)):
         if word in q:
             return (today + timedelta(days=plus)).strftime("%Y-%m-%d")
@@ -468,6 +495,11 @@ def _hours_word(h: float) -> str:
 def _plan_text(r: dict) -> str:
     """plan_appliance_use 결과 → 쉬운 말"""
     name, lines = r["appliance"], []
+    if r.get('charging_needed') is False:
+        ev = r['ev']
+        return (f"현재 충전량이 {ev['now_percent']:g}%로 계산 기준인 {ev['target_percent']:g}% 이상이에요. "
+                "이 기준으로는 추가 충전이 필요하지 않아 충전 일정을 만들지 않았어요. "
+                "장거리 운행 등으로 더 충전해야 한다면 필요한 충전량을 별도로 확인해주세요.")
     if "ev" in r:
         ev = r["ev"]
         lines.append(f"- 전기차: {ev['battery_note']}으로 {int(ev['now_percent'])}% → {int(ev['target_percent'])}% 채우려면 "
@@ -543,6 +575,14 @@ def _plan_text(r: dict) -> str:
 
 
 def _template(name: str, r: dict) -> str:
+    text = _template_body(name, r)
+    warnings = r.get("warnings") or []
+    if warnings:
+        text += "\n" + "\n".join("- " + warning for warning in warnings)
+    return text
+
+
+def _template_body(name: str, r: dict) -> str:
     if "error" in r:
         return f"- {r['error']}"
     if name == "recommend_actions":

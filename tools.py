@@ -11,6 +11,8 @@
 """
 from __future__ import annotations
 
+from time_utils import as_kst, now_kst, today_kst
+
 from datetime import date, datetime, timedelta
 import math
 from urllib.parse import quote
@@ -24,6 +26,7 @@ from config import (MAX_HORIZON_DAYS, DATA, FORECAST_HOURLY_CSV, HUB_DATA, HUB_F
 from facts import FACTS
 from features import load_labels
 from predict import level_of
+from planning import window_context
 
 WEEKDAYS = "월화수목금토일"
 
@@ -58,10 +61,18 @@ def _hours_text(hours: list[int]) -> str:
     """SMP 표기 시각(1~24, 구간 끝)을 사람이 읽는 시간대로(24시간제). 예: [12,13,14] → '11시~14시'"""
     if not hours:
         return ""
-    s, e = min(hours) - 1, max(hours)
+    ordered = sorted(set(hours))
+    groups = []
+    start = end = ordered[0]
+    for h in ordered[1:]:
+        if h == end + 1:
+            end = h
+        else:
+            groups.append((start, end))
+            start = end = h
+    groups.append((start, end))
+    return ', '.join(f'{(s - 1) % 24}시~{e if e == 24 else e % 24}시' for s, e in groups)
 
-    # 오전·오후 대신 24시간제로 (헷갈리지 않게). 시작은 0~23시, 끝은 1~24시
-    return f"{s % 24}시~{e if e == 24 else e % 24}시"
 
 
 # ---------------------------------------------------------------- ① 잉여 예보
@@ -90,7 +101,7 @@ def forecast_surplus(days: int = 5, start: str | None = None) -> dict:
     """start(없으면 내일)부터 days 일. 예보는 오늘~MAX_HORIZON_DAYS 일 뒤까지만 함.
     범위 밖 날짜는 예보하지 않고 'not_forecast' 에 담아 과거 같은 달 잉여일 비율(참고)만 줌."""
     from predict import forecast, summarize
-    today = date.today()
+    today = today_kst()
     last = today + timedelta(days=MAX_HORIZON_DAYS)
     try:
         s = pd.Timestamp(start).date() if start else today + timedelta(days=1)
@@ -111,6 +122,7 @@ def forecast_surplus(days: int = 5, start: str | None = None) -> dict:
                 "max_prob": r["max_prob"], "likely_hours": r["likely_hours"],
                 "likely_time_text": _hours_text(r["likely_hours"]) or "가능성 높은 시간 없음",
                 "basis": _basis(r["model_used"]),
+                "trend_available": bool(fc.loc[fc["date"] == pd.Timestamp(r["date"]), "trend_available"].all()) if "trend_available" in fc else False,
             })
         if (fc["model_used"] == "full").any():
             sources += ["기상청 단기예보", "제주데이터허브 579 일별 기상(학습)"]
@@ -119,6 +131,8 @@ def forecast_surplus(days: int = 5, start: str | None = None) -> dict:
     res = {"forecast": out, "sources": sources,
            "forecast_range": f"{today:%Y-%m-%d} ~ {last:%Y-%m-%d} (오늘부터 {MAX_HORIZON_DAYS}일 뒤까지)",
            "note": "확률이 20% 이상인 시간을 '가능성 있는 시간'으로 표시합니다. 예보는 확률이며 틀릴 수 있습니다."}
+    if inside and "trend_available" in fc and not fc["trend_available"].all():
+        res["warnings"] = ["일부 예측 시간은 최근 전력가격 자료가 부족해 최근 경향을 결측으로 처리한 참고 예측입니다."]
     if outside:
         res["not_forecast"] = {
             "dates": f"{outside[0]:%Y-%m-%d} ~ {outside[-1]:%Y-%m-%d}",
@@ -546,39 +560,66 @@ def explain_surplus() -> dict:
 
 # ---------------------------------------------------------------- ⑥ 예보 검증
 def check_past_forecast(start: str | None = None, end: str | None = None) -> dict:
-    lab = load_labels()
-    actual = lab.groupby("date")["is_surplus"].max()
+    lab = load_labels().dropna(subset=["is_surplus"]).drop_duplicates(["date", "hour"], keep="last")
+    if lab.empty:
+        return {"error": "확인된 실제 전력가격 자료가 없습니다.", "days": [], "sources": []}
     end_d = pd.Timestamp(end) if end else lab["date"].max()
     start_d = pd.Timestamp(start) if start else end_d - pd.Timedelta(days=6)
-    source = None
+    lab = lab[(lab["date"] >= start_d) & (lab["date"] <= end_d)]
+    # 하루 결과를 비교하므로 실제 자료가 24시간 모두 확인된 날짜만 평가한다.
+    complete = lab.groupby("date")["hour"].nunique()
+    lab = lab[lab["date"].isin(complete[complete == 24].index)]
+    source, pred = None, pd.Series(dtype=float)
     if PREDICTION_LOG.exists():
-        log = pd.read_csv(PREDICTION_LOG, parse_dates=["date"])
-        log = log[(log["date"] >= start_d) & (log["date"] <= end_d)]
-        if len(log):
-            log = log.sort_values("issued_at").groupby(["date", "hour"]).tail(1)
-            pred = log.groupby("date")["prob"].max()
-            source = "실제로 낸 예보 기록"
+        log = pd.read_csv(PREDICTION_LOG)
+        if {"date", "hour", "prob", "issued_at"} <= set(log):
+            log["date"] = pd.to_datetime(log["date"], errors="coerce")
+            log["hour"] = pd.to_numeric(log["hour"], errors="coerce")
+            log["prob"] = pd.to_numeric(log["prob"], errors="coerce")
+            def issued_kst(value):
+                try:
+                    return as_kst(pd.Timestamp(value))
+                except (ValueError, TypeError):
+                    return pd.NaT
+            log["issued"] = pd.to_datetime(log["issued_at"].map(issued_kst), errors="coerce")
+            target_start = log["date"] + pd.to_timedelta(log["hour"] - 1, unit="h")
+            log = log[(log["issued"] <= target_start) & log["prob"].between(0, 1)
+                      & log["hour"].between(1, 24)]
+            log = log.sort_values("issued").drop_duplicates(["date", "hour"], keep="last")
+            log = log.merge(lab[["date", "hour"]], on=["date", "hour"], how="inner")
+            counts = log.groupby("date")["hour"].nunique()
+            log = log[log["date"].isin(counts[counts == 24].index)]
+            if len(log):
+                pred = log.groupby("date")["prob"].max()
+                source = "실제로 낸 예보 기록(대상 시간 시작 전에 발행한 예보만)"
     if source is None:
         bt_path = DATA / "backtest_predictions.csv"
-        if not bt_path.exists():
-            return {"error": "검증할 예보 기록이 없습니다.", "sources": []}
-        bt = pd.read_csv(bt_path, parse_dates=["date"])
-        col = "p_full" if "p_full" in bt else "p_calendar"
-        bt = bt[(bt["date"] >= start_d) & (bt["date"] <= end_d)]
-        pred = bt.groupby("date")[col].max()
-        source = "시험 기간 재현 예보(각 달 시작 5일 전까지의 데이터로 학습한 모델이 냈을 예보)"
+        if bt_path.exists():
+            bt = pd.read_csv(bt_path, parse_dates=["date"])
+            col = "p_full" if "p_full" in bt else "p_calendar"
+            bt = bt.merge(lab[["date", "hour"]], on=["date", "hour"], how="inner")
+            bt = bt[bt[col].between(0, 1)]
+            counts = bt.groupby("date")["hour"].nunique()
+            bt = bt[bt["date"].isin(counts[counts == 24].index)]
+            pred = bt.groupby("date")[col].max()
+            source = "시험 기간 재현 예보(각 달 시작 5일 전까지의 데이터로 학습한 모델이 냈을 예보)"
+    if pred.empty:
+        return {"error": "실제 결과와 사전에 발행한 예보가 모두 확인된 날짜가 없어 아직 검증할 수 없어요.",
+                "days": [], "sources": []}
+    actual = lab.groupby("date")["is_surplus"].max()
     rows, hit, said = [], 0, 0
-    for d, p in pred.items():
-        a = int(actual.get(d, 0))
-        flag = p >= 0.2
+    for d, prob in pred.items():
+        actual_value = int(actual.loc[d])
+        flag = prob >= 0.2
         said += flag
-        hit += int(flag and a == 1)
+        hit += int(flag and actual_value == 1)
         rows.append({"date": f"{d:%Y-%m-%d}", "weekday": WEEKDAYS[d.day_of_week],
-                     "predicted_level": "높음" if p >= 0.5 else ("보통" if p >= 0.2 else "낮음"),
-                     "max_prob": round(float(p), 3), "actual_surplus": bool(a)})
-    missed = sum(1 for r in rows if r["actual_surplus"] and r["predicted_level"] == "낮음")
+                     "predicted_level": level_of(prob), "max_prob": round(float(prob), 3),
+                     "actual_surplus": bool(actual_value)})
+    missed = sum(1 for row in rows if row["actual_surplus"] and row["predicted_level"] == "낮음")
     return {"period": f"{start_d:%Y-%m-%d} ~ {end_d:%Y-%m-%d}", "basis": source, "days": rows,
             "said_possible": int(said), "correct_when_said": int(hit), "missed_surplus_days": int(missed),
+            "note": "실측 또는 사전 예보가 24시간 모두 확인되지 않은 날짜는 평가에서 제외합니다.",
             "sources": ["EPSIS 제주 시간별 SMP(실제)", source]}
 
 
@@ -600,11 +641,18 @@ def data_status() -> dict:
     if FORECAST_HOURLY_CSV.exists():
         f = pd.read_csv(FORECAST_HOURLY_CSV)
         fc_date = str(f["base"].iloc[0]) if "base" in f and len(f) else None
-        stale = fc_date is None or pd.to_datetime(fc_date[:8]) < pd.Timestamp(date.today() - timedelta(days=1))
+        stale = fc_date is None or pd.to_datetime(fc_date[:8]) < pd.Timestamp(today_kst() - timedelta(days=1))
     else:
         stale = True
+    labels = load_labels()
+    last = labels["date"].max() if not labels.empty else pd.NaT
+    label_age = None if pd.isna(last) else (today_kst() - last.date()).days
+    label_stale = label_age is None or label_age > 1
     return {"available": items, "forecast_issued": fc_date,
             "mode": "저장 데이터 모드(실시간 예보 없음)" if stale else "실시간 예보 모드",
+            "label_last_date": None if pd.isna(last) else str(last.date()),
+            "label_age_days": label_age, "labels_stale": label_stale,
+            "label_warning": "과거 전력가격 자료 갱신이 필요합니다. 최근 경향이 확인되지 않는 구간은 결측으로 처리해 예측합니다." if label_stale else None,
             "hub_datasets_ready": sum(v for k, v in items.items() if k.startswith("허브"))}
 
 
@@ -674,6 +722,11 @@ def plan_appliance_use(appliance: str = "", day: str = "", start_hour: int | Non
         ev = ev_energy(battery_percent, car)
         out["ev"] = ev
         out["sources"].append(EV_SOURCE)
+        if ev['now_percent'] >= ev['target_percent']:
+            out['charging_needed'] = False
+            out['best_windows'] = []
+            return out
+        out['charging_needed'] = True
         length = ev["hours_ceil"]
         if ev["assumed_percent"]:
             out["ask_user"] = "배터리가 지금 몇 % 남았는지 알려 주시면 더 정확해요. (지금은 반쯤 남았다고 보고 계산했어요)"
@@ -694,7 +747,8 @@ def plan_appliance_use(appliance: str = "", day: str = "", start_hour: int | Non
                                   "(모집 시기·조건은 제주도 공고 확인).")
         return out
     if a["mode"] == "ask" and (fuel.startswith("전기") or re.search(r"전기(보일러|야|예요|에요|이에요|입니다|로|거)", text.replace(" ", ""))):
-        return plan_appliance_use("전기보일러", day, start_hour, end_hour)
+        return plan_appliance_use("전기보일러", day, start_hour, end_hour, question=question,
+                                  away_start=away_start, away_end=away_end, away_weekdays_only=away_weekdays_only)
     if a["mode"] == "ask":
         out["ask_user"] = "전기보일러인가요, 기름·가스 보일러인가요?"
         out["support_program"] = ("기름·가스 보일러 가구는 제주도 '생활 속 히트펌프 보급사업'으로 "
@@ -702,12 +756,29 @@ def plan_appliance_use(appliance: str = "", day: str = "", start_hour: int | Non
         return out
     if a["shift"] == "불가":
         return out
+    schedule = None
+    if away_start is not None and away_end is not None:
+        a0, a1 = int(away_start), int(away_end)
+        if not 0 <= a0 < a1 <= 24:
+            return {"error": "외출 시작·종료 시각은 0~24시 안에서 순서대로 입력해 주세요.", "sources": []}
+        schedule = {"away": f"{a0}시~{a1}시" + (" (평일)" if away_weekdays_only else ""),
+                    "away_start": a0, "away_end": a1, "weekdays_only": bool(away_weekdays_only),
+                    "reservable": bool(a.get("reserve"))}
+    def allowed(c):
+        context = window_context(c, schedule, is_ev=key == "전기차")
+        if context is None:
+            return False
+        c["location_context"] = context
+        return True
     # --- 예보에서 연속 시간대 찾기 (오늘~5일 뒤)
-    today = date.today()
+    today = today_kst()
     last = today + timedelta(days=MAX_HORIZON_DAYS)
     fc = forecast(str(today), MAX_HORIZON_DAYS + 1, log=False)
+    if "trend_available" in fc and not fc["trend_available"].all():
+        out["warnings"] = ["일부 예측 시간은 최근 전력가격 자료가 부족해 최근 경향을 결측으로 처리한 참고 예측입니다."]
     fc["d"] = fc["date"].dt.date
-    now_h = datetime.now().hour
+    current = now_kst()
+    now_h = current.hour + int(bool(current.minute or current.second or current.microsecond))
     days = sorted(fc["d"].unique())
     day = (day or "").strip()
     rel = {"오늘": 0, "내일": 1, "모레": 2}
@@ -747,27 +818,18 @@ def plan_appliance_use(appliance: str = "", day: str = "", start_hour: int | Non
                 break
         return best
 
+    cands = [c for c in cands if allowed(c)]
     usable = [c for c in cands if DEFAULT_EARLIEST <= c["start_hour"] and c["end_hour"] <= DEFAULT_LATEST]
     # --- 일정(출근·외출) 반영 — 팀원 C(TIMEFLOW)의 '시간 제약 안에서 계획' 방식
-    if away_start is not None and away_end is not None:
-        a0, a1 = int(away_start), int(away_end)
-        wd_only = bool(away_weekdays_only)
-
-        def away(c):   # 그 시간대에 집에 없는지
-            if wd_only and "월화수목금토일".index(c["weekday"]) >= 5:
-                return False
-            return c["start_hour"] < a1 and c["end_hour"] > a0
-        sched = {"away": f"{a0}시~{a1}시" + (" (평일)" if wd_only else ""),
-                 "reservable": bool(a.get("reserve"))}
+    if schedule is not None:
+        sched = dict(schedule)
         if key == "전기차":
-            # 차는 사람과 함께 움직임 → 밖에 있는 동안은 그곳(회사 근처) 충전소, 집에서는 집에 있는 시간에만
-            sched["while_away"] = top3([c for c in usable if away(c)])
-            sched["at_home"] = top3([c for c in usable if not away(c)])
-            sched["note"] = ("나가 있는 동안에는 회사·목적지 근처 공용 충전소에서, 집 충전기는 집에 있는 시간에만 쓸 수 있어요.")
+            sched["while_away"] = top3([c for c in usable if c["location_context"] == "away"])
+            sched["at_home"] = top3([c for c in usable if c["location_context"] == "home"])
+            sched["note"] = "외출시간 안에 충전을 마칠 수 있는 목적지 충전과, 집에 있는 동안의 충전을 나눠 보여드려요."
         elif a.get("reserve"):
             sched["note"] = "예약·타이머 기능이 있어 집에 없어도 남는 전기 시간에 돌아가게 할 수 있어요."
         else:
-            usable = [c for c in usable if not away(c)]
             sched["note"] = "집에 있을 때 직접 켜야 하는 기기라, 나가 있는 시간은 빼고 찾았어요."
         out["schedule"] = sched
     out["length_hours"] = length
@@ -791,14 +853,7 @@ def plan_appliance_use(appliance: str = "", day: str = "", start_hour: int | Non
                                 "end_hour": s + length, "time_text": _hour_label_text(s, length),
                                 "avg_prob": round(sum(p) / len(p), 3), "level": level_of(sum(p) / len(p)),
                                 "basis": basis})
-        out["alternatives"] = top3(alt)
-    # 원한 때보다 확실히 나은 때가 있으면 따로 담아 둠 (LLM 이 빠뜨리지 않도록)
-    ref = out.get("requested_window_best") or (out["best_windows"][0] if out["best_windows"] else None)
-    pool = out.get("alternatives") or out["best_windows"]
-    if pool:
-        top = max(pool, key=lambda c: c["avg_prob"])
-        if ref is None or top["avg_prob"] >= ref["avg_prob"] + 0.05:
-            out["better_option"] = {**top, "note": "원하신 때보다 남는 전기 가능성이 더 높은 때 — 답에 꼭 함께 알려 줄 것"}
+        out["alternatives"] = top3([c for c in alt if allowed(c)])
     if start_hour is not None or end_hour is not None or day:
         req = [c for c in cands if c["in_requested"]]
         if req:
@@ -807,6 +862,13 @@ def plan_appliance_use(appliance: str = "", day: str = "", start_hour: int | Non
         else:
             out["requested_window_best"] = None
             out["requested_note"] = f"원하신 시간대 안에 {length}시간 연속으로 돌릴 자리가 없어요."
+    # 원한 때보다 확실히 나은 때가 있으면 따로 담아 둠 (LLM 이 빠뜨리지 않도록)
+    ref = out.get("requested_window_best") or (out["best_windows"][0] if out["best_windows"] else None)
+    pool = out.get("alternatives") or out["best_windows"]
+    if pool:
+        top = max(pool, key=lambda c: c["avg_prob"])
+        if ref is None or top["avg_prob"] >= ref["avg_prob"] + 0.05:
+            out["better_option"] = {**top, "note": "원하신 때보다 남는 전기 가능성이 더 높은 때 — 답에 꼭 함께 알려 줄 것"}
     # 저녁·밤 사용 안내 (남는 전기는 거의 낮에 생김)
     if start_hour is not None and int(start_hour) >= 16:
         out["evening_note"] = ("저녁에는 제주에 남는 전기가 거의 없어요(잉여 시간의 약 91%가 10시~15시). "

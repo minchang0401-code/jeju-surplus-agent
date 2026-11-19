@@ -6,7 +6,11 @@
 """
 from __future__ import annotations
 
+from time_utils import as_kst, now_kst, today_kst
+
 import os
+from pathlib import Path
+from html import escape
 from datetime import date
 
 import altair as alt
@@ -52,95 +56,19 @@ NIGHT = "#2a2f36" if DARK else "#f1f4f3"         # 그래프의 밤 배경
 GUIDE = "#6f7c77" if DARK else "#9aa8a2"         # 20%·50% 점선
 # 날짜 카드 배경: 다크 모드에서는 같은 등급 색을 어둡게 (낮음 진회색 · 보통 진초록 · 높음 진주황)
 CARD_BG = {"높음": "#7a4a12", "보통": "#1f5c3f", "낮음": "#2b3137"} if DARK else LEVEL_COLOR
-st.markdown(f"""<style>:root {{
+st.html(f"""<style>:root {{
   --ink: {'#e8eeeb' if DARK else '#1b1b1b'}; --ink2: {'#aab7b2' if DARK else '#5b6b66'};
-  --ink-k: {'#cdd7d3' if DARK else '#3d4b46'}; --accent: {'#8ab8f0' if DARK else '#1f4f8f'};
-  --panel: {'rgba(255,255,255,.06)' if DARK else '#f6f8fb'}; --panel-border: {'rgba(255,255,255,.14)' if DARK else '#dfe6ef'};
-  --myinfo: {'rgba(120,170,240,.08)' if DARK else '#f6f9fd'}; --chip: {'rgba(255,255,255,.08)' if DARK else '#f4f7f6'};
+  --ink-k: {'#cdd7d3' if DARK else '#3d4b46'}; --accent: {'#8ab8f0' if DARK else '#285b48'};
+  --panel: {'rgba(255,255,255,.06)' if DARK else '#f7f8f5'}; --panel-border: {'rgba(255,255,255,.14)' if DARK else '#dfe3dd'};
+  --myinfo: {'rgba(120,170,240,.08)' if DARK else '#fafbf8'}; --chip: {'rgba(255,255,255,.08)' if DARK else '#f4f7f6'};
   --header: {'rgba(14,17,23,.85)' if DARK else 'rgba(255,255,255,.85)'};
   --card-ink: {'#eef3f0' if DARK else '#1b1b1b'}; --card-ink2: {'#c3cfca' if DARK else '#33413c'};
   --card-border: {'rgba(255,255,255,.10)' if DARK else 'rgba(0,0,0,.05)'};
   --pill: {'#2b3137' if DARK else '#eef2f0'}; --pill-ink: {'#d6dfdb' if DARK else '#2d3b36'}; --pill-border: {'#3b434b' if DARK else '#dde4e0'};
   --ok: {'#1f4a36' if DARK else '#dff1e8'}; --ok-ink: {'#9fe0bf' if DARK else '#0d6b44'}; --ok-border: {'#2f6b4f' if DARK else '#a9dcc2'};
   --warn: {'#4a3a14' if DARK else '#fff4dc'}; --warn-ink: {'#f3cf7a' if DARK else '#8a5a00'}; --warn-border: {'#6b5520' if DARK else '#f2dcaa'};
-}}</style>""", unsafe_allow_html=True)
-st.markdown("""<style>
-/* 한 화면(스크롤 없이)에 맞추기: 지도 높이 = 화면 높이 - 나머지(머리말·카드·버튼·그래프) → 화면이 크면 지도도 커짐 */
-:root { --map-h: clamp(200px, calc(100vh - 459px), 620px); }
-/* 지도 칸 자체의 높이를 정하고(넘치면 잘라서 아래 글과 겹치지 않게) 안의 지도는 그 칸을 꽉 채움 */
-.st-key-mapbox { height: var(--map-h) !important; min-height: var(--map-h); overflow: hidden; flex: 0 0 auto !important; }
-.st-key-mapboxfull { height: calc(var(--map-h) + 54px) !important; min-height: calc(var(--map-h) + 54px); overflow: hidden; flex: 0 0 auto !important; }
-.st-key-mapbox [data-testid="stElementContainer"], .st-key-mapboxfull [data-testid="stElementContainer"],
-.st-key-mapbox [data-testid="stIFrame"], .st-key-mapboxfull [data-testid="stIFrame"] { height: 100% !important; }
-.st-key-mapbox iframe, .st-key-mapboxfull iframe { height: 100% !important; display: block; }   /* 시각 슬라이더가 없는 지도는 54px 더 크게 */
-
-[data-testid="stColumn"]:has(.days) [data-testid="stVerticalBlock"] { gap: .5rem; }
-[data-testid="stColumn"]:has(.days) [data-testid="stHorizontalBlock"] { align-items: center; }
-[data-testid="stColumn"]:has(.days) [data-testid="stVegaLiteChart"] { margin-top: -.3rem; }
-.block-container { padding-top: 2.7rem; padding-bottom: .2rem; padding-left: 1.6rem; padding-right: 1.6rem; max-width: 100%; }
-header[data-testid="stHeader"] { height: 2.4rem; background: var(--header); }
-/* 오른쪽 에너지 도우미: 스크롤해도 화면에 붙어 있고, 입력창은 화면 맨 아래 */
-[data-testid="stColumn"]:has(.st-key-sidepanel), [data-testid="column"]:has(.st-key-sidepanel) { align-self: stretch; }
-[data-testid="stLayoutWrapper"]:has(> .st-key-sidepanel) { position: sticky; top: 2.9rem; align-self: flex-start; z-index: 2; }
-.st-key-sidepanel { gap: .45rem; }
-.st-key-sidepanel button { min-height: 2rem; padding: .15rem .4rem; }
-.st-key-sidepanel button p { font-size: .78rem; white-space: nowrap; }
-.st-key-myinfo { gap: .45rem; background: var(--myinfo); }
-.st-key-myinfo [data-testid="stHorizontalBlock"] { gap: .3rem; }
-.st-key-myinfo [data-baseweb="select"] { font-size: .84rem; }
-.me-title { font-weight: 700; font-size: .92rem; color: var(--accent); margin-bottom: .1rem; }
-.me-note { font-weight: 400; font-size: .7rem; color: var(--ink2); margin-left: 4px; }
-.me-k { color: var(--ink-k); font-size: .84rem; font-weight: 600; white-space: nowrap; }
-.st-key-chatpanel { gap: .35rem; }
-.st-key-quickq { gap: .3rem; }
-.st-key-quickq button { min-height: 1.75rem; border-radius: 999px; background: var(--chip); color: var(--ink); }
-.st-key-quickq button p { color: var(--ink); }
-.st-key-quickq button p { font-size: .74rem; }
-.st-key-sidepanel [data-testid="stHorizontalBlock"] { gap: .35rem; }
-[data-testid="stLayoutWrapper"]:has(> .st-key-chatbox), .st-key-chatbox { flex: 0 0 calc(100vh - 33.5rem) !important; height: calc(100vh - 33.5rem) !important; min-height: 120px; }
-.st-key-sidepanel [data-testid="stChatInput"] textarea { font-size: .82rem; }
-h1 { font-size: 1.55rem !important; margin: 0 !important; padding: 0 !important; }
-.sub { color: var(--ink2); font-size: .9rem; margin-top: .1rem; }
-.pill { display:inline-block; font-size:.78rem; padding:3px 10px; border-radius:999px; margin-left:6px;
-        background:var(--pill); color:var(--pill-ink); border:1px solid var(--pill-border); }
-.pill.ok { background:var(--ok); color:var(--ok-ink); border-color:var(--ok-border); }
-.pill.warn { background:var(--warn); color:var(--warn-ink); border-color:var(--warn-border); }
-.days { display:flex; gap:8px; margin:.15rem 0 0; }
-.day { flex:1; border-radius:10px; padding:4px 8px; text-align:center; color:var(--card-ink); border:1px solid var(--card-border); }
-.day .d { font-size:.76rem; color:var(--card-ink2); line-height:1.3; }
-.day .lv { font-size:1rem; font-weight:800; line-height:1.3; }
-.day .t { font-size:.7rem; color:var(--card-ink2); line-height:1.25; }
-.reco { font-size:.85rem; line-height:1.6; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.win { display:inline-block; margin:2px 6px 2px 0; padding:4px 10px; border-radius:999px; background:var(--ok);
-       color:var(--ok-ink); font-weight:700; font-size:.85rem; }
-.panel-title { font-weight:800; font-size:1.05rem; margin-bottom:.2rem; }
-.mapnote { background:var(--panel); border:1px solid var(--panel-border); border-radius:10px; padding:.3rem .6rem; margin:0;
-           font-size:.8rem; line-height:1.4; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.mapnote .why { color:var(--accent); cursor:help; border-bottom:1px dotted var(--accent); white-space:nowrap; }
-.mapnote .dot { display:inline-block; width:.8rem; height:.8rem; border-radius:50%; margin-right:.35rem; vertical-align:-1px;
-                border:1px solid #fff; box-shadow:0 0 0 1px #c9d2db; }
-.mapnote .mn-sub { color:var(--ink2); }
-.legend-row { font-size:.78rem; color:var(--ink2); }
-div[data-testid="stChatMessage"] { padding: .4rem .5rem; }
-/* 시간대별 그래프 카드: 제목 줄에 고른 시각·추천 후보를 모아 한눈에 (팀원 시안) */
-.st-key-graphcard { border: 1px solid var(--panel-border); border-radius: 12px; padding: .35rem .7rem .05rem; gap: .1rem; }
-.ghead { display:flex; align-items:center; gap:8px; white-space:nowrap; overflow:hidden; font-size:.82rem; color:var(--ink); }
-.ghead .gt { font-weight:800; font-size:.95rem; }
-.ghead .sep { color:var(--ink2); opacity:.6; }
-.ghead .lbl { color:var(--ink2); font-weight:600; }
-.ghead .chip { display:inline-block; padding:3px 10px; border-radius:999px; background:var(--ok); color:var(--ok-ink); font-weight:700; }
-.ghead .chip.sel { background:var(--panel); color:var(--ink); border:1px solid var(--panel-border); }
-.ghead .info { color:var(--ink2); cursor:help; margin-left:auto; padding-left:6px; }
-/* 휴대폰(좁은 화면): 날짜 카드 5개가 한 줄에 들어가도록 글자를 줄이고 줄바꿈을 막음 */
-@media (max-width: 640px) {
-  .days { gap: 4px; }
-  .day { padding: 3px 2px; }
-  .day .d { font-size: .62rem; white-space: nowrap; }
-  .day .lv { font-size: .78rem; line-height: 1.25; }
-  .day .t { font-size: .58rem; white-space: nowrap; }
-  .pill { font-size: .66rem; padding: 2px 7px; margin-left: 3px; }
-}
-</style>""", unsafe_allow_html=True)
+}}</style>""")
+st.html((Path(__file__).parent / 'main.css').read_text())
 
 
 # 예보가 4시간보다 오래됐으면 새로 받음 (기상청 단기예보는 하루 8번 발표). 30분 동안은 다시 확인하지 않음.
@@ -184,10 +112,6 @@ def _nearby_data():
     return g, w
 
 
-fresh = _refresh_forecast(_forecast_stamp())
-status = data_status()
-_ls = llm_status()
-
 if "profile" not in st.session_state:
     try:
         st.session_state.profile = up.from_query({k: st.query_params.get(k) for k in ("area", "car", "ws", "we", "tou")})
@@ -197,17 +121,40 @@ profile = st.session_state.profile
 if "history" not in st.session_state:
     st.session_state.history = []
 
+from guest_session import ensure_guest_session, render_guest_controls
+from onboarding import render_onboarding, sync_onboarding_preference
+
+sync_onboarding_preference()
+ensure_guest_session()
+
+fresh = _refresh_forecast(_forecast_stamp())
+status = data_status()
+_ls = llm_status()
+
 # ---------------------------------------------------------------- 머리말
-pills = []
-if fresh.get("issued_at"):
-    pills.append(f"<span class='pill ok'>기상청 단기예보 {fresh['issued_at']}</span>")
-if fresh["status"] == "failed":
-    pills.append("<span class='pill warn'>최신 예보 수신 실패 · 저장된 예보 사용</span>")
-if status["mode"].startswith("저장"):
-    pills.append(f"<span class='pill warn'>{status['mode']}</span>")
-pills.append(f"<span class='pill {'ok' if _ls['on'] else ''}'>{'AI 연결' if _ls['on'] else 'AI 비상 모드'}</span>")
-st.markdown(f"<h1 title='제주 재생에너지가 남는 시간을 미리 알려 드려요. 그 시간에 전기를 쓰면 버려질 전기를 살릴 수 있어요. "
-            f"(데이터 상태는 왼쪽 위 ▸ 메뉴)'>⚡ 제주 잉여전력 도우미 {''.join(pills)}</h1>", unsafe_allow_html=True)
+_today = today_kst()
+_weekday = '월화수목금토일'[_today.weekday()]
+st.markdown(f"""<div class="app-masthead"><div><div class="app-eyebrow">제주 생활 에너지</div>
+<h1>제주 잉여전력 도우미</h1><p>전기 쓸 시간을 고르고, 내 일정에 맞춰 계획하세요.</p></div>
+<div class="app-dateline">{_today.month}월 {_today.day}일 {_weekday}요일<span>제주특별자치도</span></div></div>""", unsafe_allow_html=True)
+
+with st.sidebar:
+    render_guest_controls()
+    if st.button("처음 이용 안내 다시 보기", key="reopen_onboarding"):
+        st.session_state.onboarding_done = False
+        st.session_state.onboarding_step = 0
+        st.session_state.pop('onboarding_draft', None)
+        st.session_state.onboarding_open = True
+        st.rerun()
+
+
+def _select_forecast_day(day):
+    st.session_state.pending_forecast_day = day
+
+
+def _graph_selection_changed():
+    st.session_state.graph_selection_changed = True
+
 
 def _hourly_chart(hourly, cur, wins, height: int) -> bool:
     """시간별 잉여 가능성 막대그래프 (밤은 회색 배경, 추천 3시간은 초록 띠, 고른 시각은 검은 선).
@@ -248,7 +195,7 @@ def _hourly_chart(hourly, cur, wins, height: int) -> bool:
         x="ts:T", y=alt.value(0), text="t:N")
     chart = (bg + win_rect + bars + rules + now_rule + now_txt + drag_rule + drag_txt + hit).properties(height=height)
     try:
-        st.altair_chart(chart, use_container_width=True, on_select="rerun", selection_mode="pick", key="hourpick")
+        st.altair_chart(chart, use_container_width=True, on_select=_graph_selection_changed, selection_mode="pick", key="hourpick")
         return True
     except TypeError:   # 누르기(on_select)를 모르는 옛 Streamlit
         st.altair_chart(chart, use_container_width=True)
@@ -280,50 +227,76 @@ def _surplus_pydeck(reg, q, w, cur, sel, height):
                     height=height, use_container_width=True)
 
 
-left, right = st.columns([0.79, 0.21], gap="small")
+with st.container(key="workspace"):
+    left, right = st.columns([0.68, 0.32], gap="large")
 
 # ================================================================ 왼쪽: 예보 · 지도 · 그래프
 with left:
     try:
-        fc = forecast_surplus(5)
-        cards = "".join(
-            f"<div class='day' style='background:{CARD_BG[d['level']]}'>"
-            f"<div class='d'>{d['date'][5:].replace('-', '/')} ({d['weekday']})</div>"
-            f"<div class='lv'>{d['level']} · {d['max_prob']:.0%}</div>"
-            f"<div class='t'>{d['likely_time_text'] if d['likely_hours'] else '-'}</div></div>"
-            for d in fc["forecast"])
-        _html(f"<div class='days'>{cards}</div>")
-        hourly = _hourly(str(date.today()), _forecast_stamp())
+        from config import MAX_HORIZON_DAYS
+        fc = forecast_surplus(MAX_HORIZON_DAYS + 1, start=str(today_kst()))
+        hourly = _hourly(str(today_kst()), _forecast_stamp())
     except FileNotFoundError:
         st.error("학습된 모델이 없습니다. 먼저 `python train.py` 를 실행하세요.")
         hourly = None
 
-    MODES = ["⚡ 잉여 예보 지도", "🔌 충전소 지도"]
+    MODES = ["전력 흐름", "충전소 찾기"]
     MAP_H = 440   # 기본값. 실제 높이는 CSS(--map-h)가 화면 높이에 맞춰 정함
     g, w = _nearby_data()
 
     if hourly is not None and len(hourly):
         # 추천·처음 고르는 시각은 아직 지나지 않은 시간에서만 (오후에 열면 오늘 낮은 이미 지났음)
-        upcoming = hourly[hourly["ts"] + pd.Timedelta(hours=1) > pd.Timestamp.now()]
+        upcoming = hourly[hourly["ts"] >= pd.Timestamp(now_kst())]
         if upcoming.empty:
             upcoming = hourly
         wins = best_windows(upcoming, hours=3, top=3)
         default = upcoming.loc[upcoming["prob"].idxmax(), "label"]
-        try:   # 그래프에서 누른 시각 (안 눌렀으면 이전에 고른 시각, 처음엔 가능성이 가장 높은 시각)
-            _rows = (st.session_state.get("hourpick") or {}).get("selection", {}).get("pick") or []
-            if _rows and _rows[0].get("label") in set(hourly["label"]):
-                st.session_state.sel_label = _rows[0]["label"]
-        except Exception:
-            pass
+        if st.session_state.pop('graph_selection_changed', False):
+            rows = (st.session_state.get('hourpick') or {}).get('selection', {}).get('pick') or []
+            if rows and rows[0].get('label') in set(hourly['label']):
+                st.session_state.sel_label = rows[0]['label']
+        pending_day = st.session_state.pop('pending_forecast_day', None)
+        if pending_day:
+            day_rows = upcoming[upcoming['ts'].dt.strftime('%Y-%m-%d') == pending_day]
+            if not day_rows.empty:
+                st.session_state.sel_label = day_rows.loc[day_rows['prob'].idxmax(), 'label']
         sel = st.session_state.get("sel_label") or st.session_state.get("sel_time") or default
         if sel not in set(hourly["label"]):
             sel = default
         cur = hourly[hourly["label"] == sel].iloc[0]
+        selected_upcoming = upcoming[upcoming['ts'].dt.date == cur['ts'].date()]
+        wins = best_windows(selected_upcoming, hours=3, top=3)
     else:
         wins, cur, sel = [], None, None
 
+    st.markdown('<div class="section-label">날짜 선택 <span>오늘부터 5일 뒤까지 살펴볼 수 있어요</span></div>', unsafe_allow_html=True)
+    if hourly is not None and len(hourly):
+        with st.container(key='forecast_dates'):
+            dates = list(upcoming.groupby(upcoming['ts'].dt.date, sort=True))
+            for col, (day, rows) in zip(st.columns(len(dates), gap='small'), dates):
+                peak = rows.loc[rows['prob'].idxmax()]
+                selected = cur is not None and cur['ts'].date() == day
+                weekday = '월화수목금토일'[day.weekday()] + '요일'
+                day_text = f'오늘 · {weekday}' if day == today_kst() else weekday
+                col.button(f"**{day.month}.{day.day:02d}**\n\n{day_text}",
+                           key=f"forecast_day_{day}", type='primary' if selected else 'secondary',
+                           width='stretch', on_click=_select_forecast_day, args=(str(day),),
+                           help=f"{day.month}월 {day.day}일 {weekday} · 시간별 최대 가능성 {peak['prob']:.0%} ({peak['level']}). 누르면 해당 날짜의 예측 시각으로 이동합니다.")
+        if wins:
+            top_window = wins[0]
+            summary = (f'<span>선택한 날짜의 추천 시간 · 3시간 평균</span>'
+                       f'<strong>{top_window["text"]}</strong>'
+                       f'<p>전기가 남을 가능성 {top_window["prob"]:.0%} · 제주 전체 기준</p>')
+        else:
+            summary = ('<span>선택한 날짜의 추천 시간</span><strong>뚜렷한 추천 시간이 없습니다.</strong>'
+                       '<p>선택한 날짜의 남은 시간 중 3시간 평균 가능성이 20% 이상인 구간이 없어요.</p>')
+        note = ('<div class="forecast-note" role="note"><span class="forecast-note-label">자료 안내</span>'
+                '<p>일부 시간은 최근 전력가격 자료가 부족해 참고 예측으로 표시됩니다.</p></div>') if fc.get('warnings') else ''
+        # 요약·구분선·안내를 한 레이아웃 안에 배치해 별도 caption과 겹치지 않게 한다.
+        _html(f'<div class="forecast-summary">{summary}{note}</div>')
+
     # 지도 고르는 버튼과 지도 설명을 한 줄에 (세로 공간 절약)
-    c_mode, c_note = st.columns([0.46, 0.54], gap="small")
+    c_mode, c_note = st.columns([0.48, 0.52], gap="small")
     with c_mode:
         if hasattr(st, "segmented_control"):
             mode = st.segmented_control("지도", MODES, default=MODES[0], label_visibility="collapsed") or MODES[0]
@@ -331,10 +304,10 @@ with left:
             mode = st.radio("지도", MODES, horizontal=True, label_visibility="collapsed")
     with c_note:   # 한 줄 설명 (길면 말줄임, 전체 글은 마우스를 올리면 보임)
         if mode == MODES[0]:
-            pass   # 고른 시각의 가능성은 지도 안 왼쪽 위 배지에 이미 크게 보임
+            st.caption('지도 색: 제주 전체 예측 · 원 크기: 지역별 설비 규모')
         else:
             _html("<div class='mapnote' title='위치는 이 화면(브라우저) 안에서만 쓰고 서버로 보내거나 저장하지 않아요. "
-                  "허용하지 않거나 제주 밖이면 오른쪽 👤 내 정보의 동네로 보여 드려요.'>🔌 제주 공용 충전소 전체 · "
+                  "허용하지 않거나 제주 밖이면 오른쪽 내 생활 설정의 동네로 보여 드려요.'>제주 공용 충전소 · "
                   "<b>📍 내 주변 충전소</b>를 누르면 내 위치로 확대돼요 (위치는 저장 안 함) <span class='why'>ⓘ</span></div>")
 
     with_slider = cur is not None   # 시각 슬라이더와 시간별 그래프는 지도 아래에 늘 보임
@@ -386,15 +359,16 @@ with left:
         except TypeError:   # 아주 옛날 Streamlit
             gbox = st.container()
         with gbox:
-            _html("<div class='ghead'><span class='gt'>📊 시간대별 잉여전력 예보</span><span class='sep'>|</span>"
-                  f"<span class='chip sel'>선택 {sel} · 남을 가능성 {cur['pct']:.0f}% ({cur['level']})</span>"
-                  f"<span class='sep'>|</span><span class='lbl'>{cand_lbl}</span>{chips}"
-                  f"<span class='info' title='{_src} · 그래프를 누르거나 끌면 그 시각으로 지도가 바뀌어요'>ⓘ 출처·안내</span></div>")
+            _html("<div class='ghead'><span class='gt'>시간별 예측</span>"
+                  "<span class='lbl'>그래프를 눌러 지도 시각을 바꿔보세요</span>"
+                  f"<span class='info' title='{escape(_src, quote=True)}'>출처·안내</span></div>")
             if not _hourly_chart(hourly, cur, wins, 180):   # 옛 Streamlit 이면 슬라이더로 대신
                 _p = dict(zip(hourly["label"], zip(hourly["pct"], hourly["level"])))
                 st.select_slider("지도·그래프 시각", options=hourly["label"].tolist(), value=sel, key="sel_time",
                                  label_visibility="collapsed",
                                  format_func=lambda l: f"{l} · 전기가 남을 가능성 {_p[l][0]:.0f}% ({_p[l][1]})")
+
+    st.caption(f"기상예보 {fresh.get('issued_at') or '자료 없음'} · 전력가격 자료 {status.get('label_last_date') or '자료 없음'} 기준")
 
 
 # ================================================================ 오른쪽: 에이전트 대화 패널
@@ -504,7 +478,7 @@ with side:
         st.session_state.me_tou = p_["tou"] if p_["tou"] in _TOU else "모름"
 
     def _me_save() -> None:
-        """칸 값 → 내 정보 저장 + 주소창(즐겨찾기용)"""
+        """칸 값 → 현재 세션의 내 정보"""
         ss = st.session_state
         new_ = up.empty()
         new_["area"] = "" if ss.me_area == "선택 안 함" else ss.me_area
@@ -518,15 +492,12 @@ with side:
                 new_["work_start"], new_["work_end"] = profile["work_start"], profile["work_end"]
         new_["tou"] = ss.me_tou
         ss.profile = new_
-        try:
-            st.query_params.from_dict(up.to_query(new_))
-        except Exception:
-            pass
 
     _me_sync()
-    with st.container(key="myinfo", border=True):
-        st.markdown("<div class='me-title'>👤 내 정보</div>",
-                    unsafe_allow_html=True)
+    st.markdown('<div class="section-label">내 생활 설정</div>', unsafe_allow_html=True)
+    _profile_summary = up.short(st.session_state.profile) or '동네와 생활시간을 설정하면 추천에 반영됩니다.'
+    st.caption(_profile_summary)
+    with st.expander('설정 변경', expanded=False):
 
         def _row(label: str):
             c1, c2 = st.columns([0.27, 0.73], vertical_alignment="center")
@@ -545,8 +516,7 @@ with side:
 
     # ---- 아래: 💬 에너지 도우미 (대화 → 예시 질문 → 입력창)
     with st.container(key="chatpanel", border=True):
-        st.markdown("<div class='panel-title'>💬 에너지 도우미</div>", unsafe_allow_html=True)
-        chat_box = _chatbox()
+        st.markdown("<div class='panel-title'>생활 계획</div><div class='panel-description'>내 일정에 맞는 시간을 함께 찾아보세요.</div>", unsafe_allow_html=True)
         preset = None
         with st.container(key="quickq"):
             qa, qb = st.columns(2)
@@ -559,7 +529,8 @@ with side:
                 preset = "잉여전력이 왜 생기는 거야?"
             if qd.button("지난 예보 맞았어?", use_container_width=True):
                 preset = "지난주 예보가 실제로 맞았는지 알려줘"
-        question = st.chat_input("궁금한 것을 물어보세요") or preset
+        chat_box = _chatbox()
+        question = st.chat_input("예: 내일 9시 출근인데 언제 충전할까요?") or preset
 
 if question:
     with right:
@@ -570,30 +541,29 @@ if question:
 
 with chat_box:
     if not st.session_state.history:
-        st.chat_message("assistant").markdown(
-            "안녕하세요! 지도 아래 **그래프**에서 재생에너지가 남을 가능성이 높은 시간을 볼 수 있어요.\n\n"
-            "세탁기·식기세척기·전기차 충전처럼 **시간을 옮길 수 있는 전기 사용**이 있다면 언제가 좋을지 물어보세요.")
+        st.markdown('<div class="chat-empty"><span>어떤 시간을 찾고 계세요?</span>'
+                    '<p>위의 질문을 선택하거나<br>사용할 기기와 원하는 시간을 적어주세요.</p>'
+                    '<small>예측과 계산 근거를 함께 안내합니다.</small></div>', unsafe_allow_html=True)
     for i, (q_, res) in enumerate(st.session_state.history):
         st.chat_message("user").write(q_)
         with st.chat_message("assistant"):
             st.markdown(res["answer"].replace("~", "～"))  # '~' 두 개가 취소선으로 바뀌는 것을 막음
-            win = pick_window(res["trace"])
+            win = pick_window(res["trace"], now=now_kst())
             if win:
-                st.caption(f"📅 {win['date'][5:].replace('-', '/')} {win['time_text']} — 캘린더에 넣으면 10분 전에 알려 줘요")
+                st.caption(f"{win['date'][5:].replace('-', '/')} {win['time_text']} — 내 캘린더에 사용 계획을 저장해요")
                 c1, c2 = st.columns(2)
                 c1.link_button("구글 캘린더", google_url(win), use_container_width=True)
                 c2.download_button("아이폰·아웃룩 (.ics)", ics_bytes(win), file_name=f"jeju_surplus_{win['date']}.ics",
-                                   mime="text/calendar", key=f"ics_{i}", use_container_width=True)
+                                   help="ICS 파일에는 10분 전 알림이 포함돼요. 구글 캘린더의 알림은 저장할 때 직접 확인해주세요.", mime="text/calendar", key=f"ics_{i}", use_container_width=True)
             _render_evidence(res)
 
 # ================================================================ 사이드바: 데이터 상태
 with st.sidebar:
-    st.subheader("데이터 상태")
-    for k, v in status["available"].items():
-        st.write(("✅ " if v else "⬜ ") + k)
-    st.caption(("🟢 " if _ls["on"] else "⚪ ") + _ls["text"])
-    _mid = {"fresh": "받음", "updated": "방금 새로 받음", "failed": "받지 못함 → 3~5일 뒤는 참고치", "no_key": "키 없음"}
-    if fresh.get("mid"):
-        st.caption("기상청 중기예보(3~5일 뒤): " + _mid.get(fresh["mid"], fresh["mid"]))
-    if fresh.get("issued_at"):
-        st.caption(f"기상청 단기예보 발표: {fresh['issued_at']}" + (" (방금 새로 받음)" if fresh["status"] == "updated" else ""))
+    with st.expander('데이터 및 연결 상태', expanded=False):
+        from status_view import render_status_panel
+        render_status_panel(status, fresh, _ls)
+    st.caption('SMP 0원 이하 발생 가능성을 예측합니다. 실제 잉여량이나 요금 할인을 뜻하지 않습니다.')
+
+
+# 메인 화면을 배경으로 이용 안내 팝업을 표시합니다.
+render_onboarding(PLACE_COORDS)

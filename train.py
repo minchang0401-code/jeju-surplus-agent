@@ -15,6 +15,8 @@
 """
 from __future__ import annotations
 
+from time_utils import as_kst, now_kst, today_kst
+
 import json
 from datetime import datetime
 
@@ -128,7 +130,7 @@ def main() -> None:
     # 서비스용: 전체 기간으로 학습
     models = {name: new_model().fit(table[feats], table["is_surplus"]) for name, feats in sets.items()}
     meta = {
-        "trained_at": datetime.now().isoformat(timespec="seconds"),
+        "trained_at": now_kst().isoformat(timespec="seconds"),
         "label_source": table.attrs.get("source", ""),
         "feature_sets": sets,
         "data_period": [str(table["date"].min().date()), str(table["date"].max().date())],

@@ -13,6 +13,8 @@ EPSIS 화면: https://epsis.kpx.or.kr  > 전력거래 > 계통한계가격 > 시
 """
 from __future__ import annotations
 
+from time_utils import as_kst, now_kst, today_kst
+
 import argparse
 import re
 from datetime import date, timedelta
@@ -65,14 +67,15 @@ def collect(start: date, end: date, chunk_days: int = 120) -> pd.DataFrame:
         rows.extend(_fetch_chunk(cur, chunk_end))
         cur = chunk_end + timedelta(days=1)
     df = pd.DataFrame(rows).drop_duplicates(["date", "hour"]).sort_values(["date", "hour"])
-    df["is_surplus"] = (df["smp"] <= SURPLUS_THRESHOLD_WON).astype(int)
+    df["smp"] = pd.to_numeric(df["smp"], errors="coerce").replace([float("inf"), -float("inf")], float("nan"))
+    df["is_surplus"] = (df["smp"] <= SURPLUS_THRESHOLD_WON).astype("Int64").where(df["smp"].notna())
     return df.reset_index(drop=True)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--start", default="2024-06-01")
-    parser.add_argument("--end", default=str(date.today() - timedelta(days=1)))
+    parser.add_argument("--end", default=str(today_kst() - timedelta(days=1)))
     args = parser.parse_args()
 
     df = collect(date.fromisoformat(args.start), date.fromisoformat(args.end))

@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from config import (FORECAST_HOURLY_CSV, FORECAST_MID_CSV, HOLIDAYS, HUB_WEATHER_DAILY_CSV,
-                    MAX_HORIZON_DAYS, SMP_COMPACT_TXT, SMP_HOURLY_CSV,
+                    MAX_HORIZON_DAYS, SMP_COMPACT_TXT, SMP_HOURLY_CSV, SURPLUS_THRESHOLD_WON,
                     WEATHER_HOURLY_CSV)
 
 CALENDAR_FEATURES = [
@@ -61,6 +61,12 @@ def load_labels() -> pd.DataFrame:
         df = _load_compact(SMP_COMPACT_TXT)
         source = SMP_COMPACT_TXT.name
     df["date"] = pd.to_datetime(df["date"])
+    if "smp" in df:
+        df["smp"] = pd.to_numeric(df["smp"], errors="coerce").replace([np.inf, -np.inf], np.nan)
+        df = df.loc[df["smp"].notna()].copy()
+        df["is_surplus"] = (df["smp"] <= SURPLUS_THRESHOLD_WON).astype(int)
+    df = df.loc[df["is_surplus"].isin([0, 1])].copy()
+    df["is_surplus"] = df["is_surplus"].astype(int)
     df = df[["date", "hour", "is_surplus"] + (["smp"] if "smp" in df else [])]
     df.attrs["source"] = source
     return df
@@ -86,13 +92,19 @@ def add_calendar(df: pd.DataFrame) -> pd.DataFrame:
 def add_recent_trend(df: pd.DataFrame, history: pd.DataFrame,
                      window_days: int = 14, lag_days: int = MAX_HORIZON_DAYS) -> pd.DataFrame:
     """예측 대상일 D 에 대해, [D-lag-window+1, D-lag] 기간의 잉여 횟수를 붙입니다."""
+    if history.empty:
+        return df.assign(recent_surplus_days=np.nan, recent_surplus_hours_same_hour=np.nan)
     full_idx = pd.date_range(history["date"].min(),
                              max(history["date"].max(), df["date"].max()), freq="D")
-    daily = history.groupby("date")["is_surplus"].max().reindex(full_idx, fill_value=0)
-    by_hour = (history.pivot_table(index="date", columns="hour", values="is_surplus", aggfunc="max")
-               .reindex(full_idx).fillna(0))
-    days_feat = daily.rolling(window_days, min_periods=1).sum().shift(lag_days)
-    hour_feat = by_hour.rolling(window_days, min_periods=1).sum().shift(lag_days)
+    # 미관측 날짜·시간을 0회로 채우지 않는다. 집계 구간에 결측이 있으면 NaN으로 모델에 전달한다.
+    grouped = history.groupby("date")["is_surplus"]
+    daily = grouped.max().where((grouped.count() == 24) | (grouped.max() == 1)).reindex(full_idx)
+    by_hour = history.pivot_table(index="date", columns="hour", values="is_surplus", aggfunc="max").reindex(full_idx)
+    expected = pd.Series(1.0, index=full_idx).rolling(window_days, min_periods=1).sum()
+    days_feat = daily.rolling(window_days, min_periods=1).sum().where(
+        daily.notna().rolling(window_days, min_periods=1).sum() == expected).shift(lag_days)
+    hour_feat = by_hour.rolling(window_days, min_periods=1).sum().where(
+        by_hour.notna().rolling(window_days, min_periods=1).sum().eq(expected, axis=0)).shift(lag_days)
 
     out = df.copy()
     out["recent_surplus_days"] = out["date"].map(days_feat)

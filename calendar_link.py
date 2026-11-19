@@ -1,4 +1,4 @@
-"""추천 시간대를 휴대폰 캘린더에 넣기 — 그 시간 10분 전에 알림이 오게 함.
+"""추천 시간대를 휴대폰 캘린더에 저장. ICS는 10분 전 알림, 구글은 사용자 캘린더 설정 적용.
 
 - 구글 캘린더 링크: 안드로이드·PC에서 눌러 바로 저장
 - .ics 파일: 아이폰·아웃룩에서 열어 저장 (VALARM 10분 전 알림 포함)
@@ -9,11 +9,12 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 import zlib
+from planning import window_context
 
 KST = timezone(timedelta(hours=9))
 
 
-def pick_window(trace: list) -> dict | None:
+def pick_window(trace: list, now: datetime | None = None) -> dict | None:
     """답변에 쓰인 도구 결과에서 캘린더에 넣을 시간대 하나를 고름.
     우선순위: 원한 때(가능성 낮음 아님) → 더 나은 때 → 대안 1순위 → 추천 1순위."""
     for t in reversed(trace or []):
@@ -29,12 +30,16 @@ def pick_window(trace: list) -> dict | None:
         if r.get("better_option"):
             cands.append(r["better_option"])
         cands += (r.get("alternatives") or []) + (r.get("best_windows") or [])
+        cands = [w for w in cands if window_context(w, r.get("schedule"), r.get("appliance") == "전기차") is not None]
+        if now is not None:
+            current = now.replace(tzinfo=KST) if now.tzinfo is None else now.astimezone(KST)
+            cands = [w for w in cands if _span(w)[0] > current]
         if not cands:
             continue
         w = cands[0]
         return {"appliance": r.get("appliance", "전기 사용"), "date": w["date"], "start_hour": int(w["start_hour"]),
                 "end_hour": int(w["end_hour"]), "time_text": w.get("time_text", ""), "level": w.get("level", ""),
-                "how": r.get("how", "")}
+                "how": r.get("how", ""), "location_context": w.get("location_context", "unspecified")}
     return None
 
 
@@ -45,12 +50,13 @@ def _span(w: dict) -> tuple[datetime, datetime]:
 
 def _title(w: dict) -> str:
     verb = "충전하기" if w["appliance"] == "전기차" else "돌리기"
-    return f"⚡ {w['appliance']} {verb} — 제주 남는 전기 시간"
+    return f"⚡ {w['appliance']} {verb} — 제주 전기 사용 계획"
 
 
 def _details(w: dict) -> str:
+    place = " 외출 중 목적지 근처 충전소 이용을 가정합니다." if w.get("location_context") == "away" and w["appliance"] == "전기차" else ""
     return (f"제주 잉여전력 도우미 추천: {w['time_text']} (남을 가능성 {w['level']}). {w['how']} "
-            "예보는 확률이라 틀릴 수 있어요.")
+            f"예보는 확률이라 틀릴 수 있어요.{place}")
 
 
 def google_url(w: dict) -> str:

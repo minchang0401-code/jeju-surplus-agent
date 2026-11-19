@@ -17,6 +17,8 @@
 """
 from __future__ import annotations
 
+from time_utils import as_kst, now_kst, today_kst
+
 import argparse
 import json
 import time
@@ -133,7 +135,7 @@ def collect_862() -> pd.DataFrame:
 def probe_579(max_calls: int = 150) -> None:
     """579 가 어느 날짜까지 데이터가 있는지 찾기: 오늘부터 한 달씩 거슬러 매달 15일을 조회.
     첫 데이터가 나오면 그 달을 하루씩 훑어 마지막 날짜를 찾고, 첫 행 모양을 보여 줌."""
-    d = date.today().replace(day=15)
+    d = today_kst().replace(day=15)
     for _ in range(max_calls):
         rows = _get_all(579, {"searchDate": d.strftime("%Y%m%d")})
         if rows:
@@ -141,7 +143,7 @@ def probe_579(max_calls: int = 150) -> None:
             print(json.dumps(rows[0], ensure_ascii=False)[:800])
             last = d
             nxt = d + timedelta(days=1)
-            while nxt <= date.today():
+            while nxt <= today_kst():
                 if not _get_all(579, {"searchDate": nxt.strftime("%Y%m%d")}):
                     break
                 last, nxt = nxt, nxt + timedelta(days=1)
@@ -157,7 +159,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--only", type=int, choices=[579, 1226, 1225, 862])
     parser.add_argument("--start", default="2024-06-01", help="579 시작일")
-    parser.add_argument("--end", default=str(date.today() - timedelta(days=1)), help="579 종료일")
+    parser.add_argument("--end", default=str(today_kst() - timedelta(days=1)), help="579 종료일")
     parser.add_argument("--debug", action="store_true", help="첫 응답 모양 출력")
     parser.add_argument("--limit", type=int, default=100, help="한 번에 받을 행 수 (클수록 호출 수가 줄어듦)")
     parser.add_argument("--months", type=int, default=0, help="1226·1225 를 앞에서부터 이 개월 수만 받기")
@@ -168,7 +170,7 @@ def main() -> None:
     LIMIT = args.limit
     if DEBUG and args.only == 579:
         # 시험 모드: 579는 하루 1회 호출이라 최근 2일만 (하루 한도 1000건 보호)
-        args.start = str(date.today() - timedelta(days=2))
+        args.start = str(today_kst() - timedelta(days=2))
     HUB.mkdir(parents=True, exist_ok=True)
     if args.probe579:
         probe_579()

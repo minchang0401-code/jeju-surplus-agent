@@ -65,8 +65,11 @@ def best_windows(df: pd.DataFrame, hours: int = 3, top: int = 3, min_prob: float
     """평균 잉여 가능성이 큰 연속 시간대(겹치지 않게). 같은 날 안에서만 찾음."""
     out = []
     for d, g in df.groupby(df["ts"].dt.date):
+        g = g.sort_values("ts")
         p = g["prob"].to_numpy()
         for i in range(0, len(g) - hours + 1):
+            if g.iloc[i + hours - 1]['ts'] - g.iloc[i]['ts'] != pd.Timedelta(hours=hours - 1):
+                continue
             m = float(p[i:i + hours].mean())
             out.append((m, g.index[i], g.index[i + hours - 1]))
     out.sort(key=lambda x: -x[0])
