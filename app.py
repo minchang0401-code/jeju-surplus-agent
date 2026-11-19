@@ -35,6 +35,28 @@ except Exception:   # Secrets 파일이 없는 PC 실행이면 .env 를 씀
     pass
 
 st.set_page_config(page_title="제주 잉여전력 도우미", page_icon="⚡", layout="wide", initial_sidebar_state="collapsed")
+
+
+def _is_dark() -> bool:
+    """오른쪽 위 ⋮ 메뉴의 Light/Dark 설정 (Streamlit 1.46+ st.context.theme). 모르면 밝은 화면으로 봄."""
+    try:
+        return getattr(st.context.theme, "type", "light") == "dark"
+    except Exception:
+        return False
+
+
+DARK = _is_dark()
+# 글자·패널 색: 다크 모드에서는 밝은 글자 + 어두운 반투명 패널 (색이 정해진 날짜 카드·알약은 어느 모드든 진한 글자 그대로)
+INK = "#e8eeeb" if DARK else "#15211d"          # 그래프 위 글자·고른 시각 선
+NIGHT = "#2a2f36" if DARK else "#f1f4f3"         # 그래프의 밤 배경
+GUIDE = "#6f7c77" if DARK else "#9aa8a2"         # 20%·50% 점선
+st.markdown(f"""<style>:root {{
+  --ink: {'#e8eeeb' if DARK else '#1b1b1b'}; --ink2: {'#aab7b2' if DARK else '#5b6b66'};
+  --ink-k: {'#cdd7d3' if DARK else '#3d4b46'}; --accent: {'#8ab8f0' if DARK else '#1f4f8f'};
+  --panel: {'rgba(255,255,255,.06)' if DARK else '#f6f8fb'}; --panel-border: {'rgba(255,255,255,.14)' if DARK else '#dfe6ef'};
+  --myinfo: {'rgba(120,170,240,.08)' if DARK else '#f6f9fd'}; --chip: {'rgba(255,255,255,.08)' if DARK else '#f4f7f6'};
+  --header: {'rgba(14,17,23,.85)' if DARK else 'rgba(255,255,255,.85)'};
+}}</style>""", unsafe_allow_html=True)
 st.markdown("""<style>
 /* 한 화면(스크롤 없이)에 맞추기: 지도 높이 = 화면 높이 - 나머지(머리말·카드·버튼·그래프) → 화면이 크면 지도도 커짐 */
 :root { --map-h: clamp(200px, calc(100vh - 436px), 620px); }
@@ -49,28 +71,29 @@ st.markdown("""<style>
 [data-testid="stColumn"]:has(.days) [data-testid="stHorizontalBlock"] { align-items: center; }
 [data-testid="stColumn"]:has(.days) [data-testid="stVegaLiteChart"] { margin-top: -.3rem; }
 .block-container { padding-top: 2.7rem; padding-bottom: .2rem; padding-left: 1.6rem; padding-right: 1.6rem; max-width: 100%; }
-header[data-testid="stHeader"] { height: 2.4rem; background: rgba(255,255,255,.85); }
+header[data-testid="stHeader"] { height: 2.4rem; background: var(--header); }
 /* 오른쪽 에너지 도우미: 스크롤해도 화면에 붙어 있고, 입력창은 화면 맨 아래 */
 [data-testid="stColumn"]:has(.st-key-sidepanel), [data-testid="column"]:has(.st-key-sidepanel) { align-self: stretch; }
 [data-testid="stLayoutWrapper"]:has(> .st-key-sidepanel) { position: sticky; top: 2.9rem; align-self: flex-start; z-index: 2; }
 .st-key-sidepanel { gap: .45rem; }
 .st-key-sidepanel button { min-height: 2rem; padding: .15rem .4rem; }
 .st-key-sidepanel button p { font-size: .78rem; white-space: nowrap; }
-.st-key-myinfo { gap: .45rem; background: #f6f9fd; }
+.st-key-myinfo { gap: .45rem; background: var(--myinfo); }
 .st-key-myinfo [data-testid="stHorizontalBlock"] { gap: .3rem; }
 .st-key-myinfo [data-baseweb="select"] { font-size: .84rem; }
-.me-title { font-weight: 700; font-size: .92rem; color: #1f4f8f; margin-bottom: .1rem; }
-.me-note { font-weight: 400; font-size: .7rem; color: #8a9893; margin-left: 4px; }
-.me-k { color: #3d4b46; font-size: .84rem; font-weight: 600; white-space: nowrap; }
+.me-title { font-weight: 700; font-size: .92rem; color: var(--accent); margin-bottom: .1rem; }
+.me-note { font-weight: 400; font-size: .7rem; color: var(--ink2); margin-left: 4px; }
+.me-k { color: var(--ink-k); font-size: .84rem; font-weight: 600; white-space: nowrap; }
 .st-key-chatpanel { gap: .35rem; }
 .st-key-quickq { gap: .3rem; }
-.st-key-quickq button { min-height: 1.75rem; border-radius: 999px; background: #f4f7f6; }
+.st-key-quickq button { min-height: 1.75rem; border-radius: 999px; background: var(--chip); color: var(--ink); }
+.st-key-quickq button p { color: var(--ink); }
 .st-key-quickq button p { font-size: .74rem; }
 .st-key-sidepanel [data-testid="stHorizontalBlock"] { gap: .35rem; }
 [data-testid="stLayoutWrapper"]:has(> .st-key-chatbox), .st-key-chatbox { flex: 0 0 calc(100vh - 33.5rem) !important; height: calc(100vh - 33.5rem) !important; min-height: 200px; }
 .st-key-sidepanel [data-testid="stChatInput"] textarea { font-size: .82rem; }
 h1 { font-size: 1.55rem !important; margin: 0 !important; padding: 0 !important; }
-.sub { color: #5b6b66; font-size: .9rem; margin-top: .1rem; }
+.sub { color: var(--ink2); font-size: .9rem; margin-top: .1rem; }
 .pill { display:inline-block; font-size:.78rem; padding:3px 10px; border-radius:999px; margin-left:6px;
         background:#eef2f0; color:#2d3b36; border:1px solid #dde4e0; }
 .pill.ok { background:#dff1e8; color:#0d6b44; border-color:#a9dcc2; }
@@ -84,13 +107,13 @@ h1 { font-size: 1.55rem !important; margin: 0 !important; padding: 0 !important;
 .win { display:inline-block; margin:2px 6px 2px 0; padding:4px 10px; border-radius:999px; background:#dff1e8;
        color:#0d6b44; font-weight:700; font-size:.85rem; }
 .panel-title { font-weight:800; font-size:1.05rem; margin-bottom:.2rem; }
-.mapnote { background:#f6f8fb; border:1px solid #dfe6ef; border-radius:10px; padding:.3rem .6rem; margin:0;
-           font-size:.8rem; line-height:1.4; color:#1b1b1b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.mapnote .why { color:#1f4f8f; cursor:help; border-bottom:1px dotted #1f4f8f; white-space:nowrap; }
+.mapnote { background:var(--panel); border:1px solid var(--panel-border); border-radius:10px; padding:.3rem .6rem; margin:0;
+           font-size:.8rem; line-height:1.4; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mapnote .why { color:var(--accent); cursor:help; border-bottom:1px dotted var(--accent); white-space:nowrap; }
 .mapnote .dot { display:inline-block; width:.8rem; height:.8rem; border-radius:50%; margin-right:.35rem; vertical-align:-1px;
                 border:1px solid #fff; box-shadow:0 0 0 1px #c9d2db; }
-.mapnote .mn-sub { color:#52514e; }
-.legend-row { font-size:.78rem; color:#5b6b66; }
+.mapnote .mn-sub { color:var(--ink2); }
+.legend-row { font-size:.78rem; color:var(--ink2); }
 div[data-testid="stChatMessage"] { padding: .4rem .5rem; }
 </style>""", unsafe_allow_html=True)
 
@@ -159,7 +182,7 @@ def _hourly_chart(hourly, cur, wins, height: int) -> bool:
     x = alt.X("ts:T", title=None, axis=alt.Axis(format="%m/%d %H시", labelAngle=0, tickCount="day", grid=False))
     y = alt.Y("prob:Q", title=None, scale=alt.Scale(domain=[0, max(0.6, float(hourly["prob"].max()) + .05)]),
               axis=alt.Axis(format="%"))
-    bg = alt.Chart(night).mark_rect(color="#f1f4f3").encode(x="s:T", x2="e:T")
+    bg = alt.Chart(night).mark_rect(color=NIGHT).encode(x="s:T", x2="e:T")
     top = max(0.6, float(hourly["prob"].max()) + .05)
     hd = hourly.assign(ts2=hourly["ts"] + pd.Timedelta(minutes=54), top=top)
     bars = alt.Chart(hd).mark_bar().encode(
@@ -175,18 +198,18 @@ def _hourly_chart(hourly, cur, wins, height: int) -> bool:
         x="ts:T", x2="ts2:T", y=alt.Y("top:Q", scale=alt.Scale(domain=[0, top])), y2=alt.datum(0),
         tooltip=[alt.Tooltip("label:N", title="시간"), alt.Tooltip("pct:Q", title="가능성(%)"),
                  alt.Tooltip("level:N", title="등급"), alt.Tooltip("basis:N", title="근거")]).add_params(drag, pick)
-    drag_rule = alt.Chart(hd).mark_rule(color="#15211d", strokeWidth=2, strokeDash=[4, 3]).encode(x="ts:T").transform_filter(drag)
+    drag_rule = alt.Chart(hd).mark_rule(color=INK, strokeWidth=2, strokeDash=[4, 3]).encode(x="ts:T").transform_filter(drag)
     drag_txt = alt.Chart(hd.assign(t=hd["label"] + " · " + hd["pct"].round().astype(int).astype(str) + "%")).mark_text(
-        align="left", dx=5, dy=16, baseline="top", fontSize=12, color="#15211d").encode(
+        align="left", dx=5, dy=16, baseline="top", fontSize=12, color=INK).encode(
         x="ts:T", y=alt.value(0), text="t:N").transform_filter(drag)
-    rules = alt.Chart(pd.DataFrame({"y": [0.2, 0.5]})).mark_rule(strokeDash=[4, 4], color="#9aa8a2").encode(y="y:Q")
-    now_rule = alt.Chart(pd.DataFrame({"ts": [cur["ts"]]})).mark_rule(color="#15211d", strokeWidth=2).encode(x="ts:T")
+    rules = alt.Chart(pd.DataFrame({"y": [0.2, 0.5]})).mark_rule(strokeDash=[4, 4], color=GUIDE).encode(y="y:Q")
+    now_rule = alt.Chart(pd.DataFrame({"ts": [cur["ts"]]})).mark_rule(color=INK, strokeWidth=2).encode(x="ts:T")
     win_df = pd.DataFrame([{"s": v["start"], "e": v["end"]} for v in wins]) if wins else pd.DataFrame(columns=["s", "e"])
     win_rect = alt.Chart(win_df).mark_rect(color="#3fb37c", opacity=0.13).encode(x="s:T", x2="e:T")
     _late = cur["ts"] > hourly["ts"].min() + (hourly["ts"].max() - hourly["ts"].min()) * 0.8   # 오른쪽 끝이면 글을 선 왼쪽에
     _al, _dx = ("right", -5) if _late else ("left", 5)
     now_txt = alt.Chart(pd.DataFrame({"ts": [cur["ts"]], "t": [f"{cur['label']} · {cur['pct']:.0f}%"]})).mark_text(
-        align=_al, dx=_dx, dy=2, baseline="top", fontSize=12, fontWeight="bold", color="#15211d").encode(
+        align=_al, dx=_dx, dy=2, baseline="top", fontSize=12, fontWeight="bold", color=INK).encode(
         x="ts:T", y=alt.value(0), text="t:N")
     chart = (bg + win_rect + bars + rules + now_rule + now_txt + drag_rule + drag_txt + hit).properties(height=height)
     try:
