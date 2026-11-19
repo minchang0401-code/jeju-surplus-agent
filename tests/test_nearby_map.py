@@ -65,3 +65,10 @@ def test_whole_island_and_answer_maps_use_same_map():
         assert "dapi.kakao.com/v2/maps/sdk.js" in h and "makeLeaflet()" in h   # 카카오맵 → OpenStreetMap
         assert "eng.fit(fitPoints())" in h                                     # 점이 모두 보이게 맞춤
     assert '"mode": "near"' in nearby_map_html(g, None, None, mode="이상한값")   # 모르는 값은 내 주변으로
+
+
+def test_outside_jeju_warning_is_red_banner_over_map():
+    h = _html()
+    assert 'id="warn" role="alert"' in h and "#d32f2f" in h        # 빨간 안내 상자
+    assert 'useHome("📍 GPS로 위치는 확인했어요' in h                   # 제주 밖이면 잡힌 거리 안내
+    assert "position:absolute" in h                                  # 지도 위에 겹쳐 높이가 늘지 않음

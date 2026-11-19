@@ -31,6 +31,17 @@ _PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
  #msg{color:#52514e;font-size:14px;min-height:20px}
  #engine{color:#7a7974;font-size:12px;margin-top:2px}
  #map{height:__HEIGHT__px;border-radius:12px;background:#e8eff3}
+ #wrap{position:relative}
+ /* 꼭 봐야 하는 안내(제주 밖·위치 실패): 지도 위쪽에 겹쳐 띄움 → 높이가 늘지 않아 스크롤이 생기지 않음 */
+ #warn{position:absolute;top:10px;left:10px;right:58px;z-index:1100;display:none;gap:8px;align-items:flex-start;
+   background:rgba(255,255,255,.96);border:1px solid #f1b5b3;border-left:5px solid #d32f2f;border-radius:10px;
+   padding:9px 10px 9px 12px;box-shadow:0 2px 8px rgba(0,0,0,.12);color:#c62828;font-size:15.5px;font-weight:600;line-height:1.45}
+ #warn.show{display:flex}
+ #warn span{flex:1}
+ #warn button{background:none;border:none;color:#c62828;font-size:16px;padding:0 2px;line-height:1}
+ #msg:empty{min-height:0;margin:0}
+ #msg.ok{color:#1251a8;font-weight:600}
+ #msg.warn{color:#c62828;font-weight:600}
  #list{margin-top:8px}
  .row{display:flex;justify-content:space-between;gap:8px;padding:8px 2px;border-bottom:1px solid #e4e3df}
  .row b{font-weight:600} .q{color:#2a78d6} .s{color:#7a7974}
@@ -44,7 +55,7 @@ _PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
  <a target="_blank" rel="noopener" href="https://map.kakao.com/link/search/%EC%A0%84%EA%B8%B0%EC%B0%A8%EC%B6%A9%EC%A0%84%EC%86%8C">카카오맵에서 내 주변 충전소 검색 ↗</a>
 </div>
 <div id="msg"></div>
-<div id="map"></div>
+<div id="wrap"><div id="map"></div><div id="warn" role="alert"><span id="warnText"></span><button id="warnX" title="닫기" aria-label="안내 닫기">✕</button></div></div>
 <div id="engine"></div>
 <div id="list"></div>
 <script>
@@ -52,7 +63,16 @@ const D = __DATA__;
 const P = D.p, W = D.w, HOME = D.home, KKEY = D.kakao_key, MODE = D.mode || "near";
 let quickOnly = false, eng = null, last = null, touched = false;
 const $ = (id) => document.getElementById(id);
-function say(t) { $("msg").textContent = t; }
+// kind: "warn" = 빨간 안내를 지도 위에 띄움(제주 밖·위치 실패), "ok" = GPS 성공(파란 글씨), 없으면 보통 안내
+function say(t, kind) {
+  $("warn").className = "";
+  if (kind === "warn" && $("map").style.display !== "none") {
+    $("warnText").textContent = t; $("warn").className = "show";
+    $("msg").textContent = ""; $("msg").className = "";
+    return;
+  }
+  $("msg").textContent = t; $("msg").className = kind || "";
+}
 function km(a, b, c, d) {
   const R = 6371, r = Math.PI / 180, x = (c - a) * r, y = (d - b) * r;
   const h = Math.sin(x / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin(y / 2) ** 2;
@@ -160,7 +180,8 @@ function makeKakao() {
 function makeLeaflet() {
   return (window.L ? Promise.resolve() : loadScript("__LEAFLET_JS__")).then(function () {
     if (!window.L) throw new Error("no leaflet");
-    const map = L.map("map", {scrollWheelZoom: false, preferCanvas: true}).setView([33.38, 126.55], 10);
+    const map = L.map("map", {scrollWheelZoom: false, preferCanvas: true, zoomControl: false}).setView([33.38, 126.55], 10);
+    L.control.zoom({position: "topright"}).addTo(map);   // 왼쪽 위는 빨간 안내 자리
     let fails = 0, switched = false;
     const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {attribution: "© OpenStreetMap contributors", maxZoom: 19});
     osm.on("tileerror", function () {
@@ -231,10 +252,10 @@ function showAt(lat, lon, label, acc, isGps) {
 }
 function useHome(reason) {
   if (HOME) {
-    say(reason + " 저장한 내 동네(" + HOME.name + ") 중심으로 보여 드려요.");
+    say(reason + " 저장한 내 동네(" + HOME.name + ") 중심으로 보여 드려요.", "warn");
     showAt(HOME.lat, HOME.lon, "내 동네(" + HOME.name + ")", 0, false);
   } else {
-    say(reason + " 왼쪽(휴대폰은 왼쪽 위 '>' 버튼) '👤 내 정보'에 동네를 저장하면 그 기준으로 보여 드려요.");
+    say(reason + " 왼쪽(휴대폰은 왼쪽 위 '>' 버튼) '👤 내 정보'에 동네를 저장하면 그 기준으로 보여 드려요.", "warn");
   }
 }
 $("gps").onclick = function () {
@@ -248,7 +269,7 @@ $("gps").onclick = function () {
       useHome("📍 GPS로 위치는 확인했어요. 지금은 제주에서 약 " + far + "km 떨어진 곳이에요(충전소 정보는 제주만 있어요).");
       return;
     }
-    say("내 위치(정확도 약 " + Math.round(c.accuracy) + "m)를 기준으로 보여 드려요. 위치는 이 화면에서만 쓰고 저장하지 않아요.");
+    say("📍 내 위치(정확도 약 " + Math.round(c.accuracy) + "m)를 기준으로 보여 드려요. 위치는 이 화면에서만 쓰고 저장하지 않아요.", "ok");
     showAt(c.latitude, c.longitude, "지금 내 위치", Math.min(c.accuracy, 2000), true);
   }, function (e) {
     const why = e.code === 1 ? "위치 사용이 허용되지 않았어요(주소창 왼쪽 아이콘 → 위치 → 허용)."
@@ -257,6 +278,7 @@ $("gps").onclick = function () {
     useHome(why);
   }, {enableHighAccuracy: true, timeout: 10000, maximumAge: 60000});
 };
+$("warnX").onclick = function () { $("warn").className = ""; };
 $("quick").onclick = function () {
   quickOnly = !quickOnly;
   // 켜졌는지 한눈에 보이도록: 끔 = 흰 바탕, 켬 = 초록 바탕 + ✓
@@ -282,7 +304,7 @@ function ready(api) {
 }
 function noMap() {
   $("map").style.display = "none";
-  say("지도 그림을 불러오지 못했어요. 가까운 충전소 목록과 길찾기는 그대로 쓸 수 있어요.");
+  say("지도 그림을 불러오지 못했어요. 가까운 충전소 목록과 길찾기는 그대로 쓸 수 있어요.", "warn");
 }
 const startMap = KKEY
   ? withTimeout(makeKakao(), 5000).catch(function () {
