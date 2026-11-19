@@ -582,8 +582,9 @@ def data_status() -> dict:
     }
     for no in (862, 1225, 1226):
         items[f"허브 {no} {HUB_DATA[no][2]}"] = HUB_DATA[no][1].exists()
-    for no in (877, 123, 472):
-        items[f"허브 {no} (파일)"] = bool(_hub_folder(no))
+    file_names = {877: "제주도 일간 기후(2000~2021)", 123: "전기사업체(태양광) 등록현황", 472: "풍력발전현황"}
+    for no in (877, 123, 472):   # API가 아니라 허브에서 내려받은 파일
+        items[f"허브 {no} {file_names[no]}"] = bool(_hub_folder(no))
     fc_date = None
     if FORECAST_HOURLY_CSV.exists():
         f = pd.read_csv(FORECAST_HOURLY_CSV)
