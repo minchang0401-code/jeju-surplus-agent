@@ -27,6 +27,7 @@ _PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
  .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:2px 0 8px}
  button{font-size:15px;padding:8px 14px;border-radius:10px;border:1px solid #2a78d6;background:#2a78d6;color:#fff;cursor:pointer}
  button.sub{background:#fff;color:#2a78d6}
+ button.on{background:#1a7f4b;border-color:#1a7f4b;color:#fff;font-weight:600}
  #msg{color:#52514e;font-size:14px;min-height:20px}
  #engine{color:#7a7974;font-size:12px;margin-top:2px}
  #map{height:__HEIGHT__px;border-radius:12px;background:#e8eff3}
@@ -39,7 +40,7 @@ _PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
 </style></head><body>
 <div class="bar" id="bar">
  <button id="gps">📍 내 위치로 찾기</button>
- <button class="sub" id="quick">급속만 보기: 끔</button>
+ <button class="sub" id="quick" aria-pressed="false">급속만 보기: 끔</button>
  <a target="_blank" rel="noopener" href="https://map.kakao.com/link/search/%EC%A0%84%EA%B8%B0%EC%B0%A8%EC%B6%A9%EC%A0%84%EC%86%8C">카카오맵에서 내 주변 충전소 검색 ↗</a>
 </div>
 <div id="msg"></div>
@@ -253,7 +254,11 @@ $("gps").onclick = function () {
   }, {enableHighAccuracy: true, timeout: 10000, maximumAge: 60000});
 };
 $("quick").onclick = function () {
-  quickOnly = !quickOnly; this.textContent = "급속만 보기: " + (quickOnly ? "켬" : "끔");
+  quickOnly = !quickOnly;
+  // 켜졌는지 한눈에 보이도록: 끔 = 흰 바탕, 켬 = 초록 바탕 + ✓
+  this.textContent = quickOnly ? "✓ 급속만 보기: 켬" : "급속만 보기: 끔";
+  this.className = quickOnly ? "on" : "sub";
+  this.setAttribute("aria-pressed", quickOnly ? "true" : "false");
   if (eng) eng.draw();
   if (last) showAt.apply(null, last);
 };
