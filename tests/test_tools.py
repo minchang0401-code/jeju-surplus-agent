@@ -97,7 +97,7 @@ def test_chargers_ranked_by_hub_midday_use():
     assert moved and all("붐볐" in m["why"] or "대기" in m["why"] for m in moved)
     assert any("reason" in c for c in r["chargers"])
     m = tools._midday_use()
-    assert set(m["level"]) == {"한산", "보통", "붐빔"} and m.attrs["period"] == "2021년 1~3월"
+    assert set(m["level"]) == {"한산", "보통", "붐빔"} and m.attrs["period"] == "2021년 1~9월"
 
 
 def test_grid_records_numbers():

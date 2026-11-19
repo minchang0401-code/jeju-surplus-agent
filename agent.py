@@ -604,7 +604,7 @@ def _template(name: str, r: dict) -> str:
         for m in r.get("moved_back", []):
             lines.append(f"  - ({m['name']} {m['distance_km']:.1f}km는 더 가깝지만 {m['why']}이 있어 뒤로 뺐어요)")
         if r.get("ranking"):
-            lines.append("  - 순서는 제주데이터허브 1226(2021년 1~3월 충전소별 낮 시간 충전 기록)으로 정했어요.")
+            lines.append("  - 순서는 제주데이터허브 1226(2021년 1~9월 충전소별 낮 시간 충전 기록)으로 정했어요.")
         return "\n".join(lines)
     if name == "ev_charging_habits":
         if "peak_charging_start_hour" not in r:

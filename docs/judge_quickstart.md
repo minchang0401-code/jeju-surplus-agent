@@ -33,5 +33,5 @@
 | 예측 성능 (날짜 PR-AUC 0.651, 무작위 0.165) | `reports/report.md`, 결과 설명자료 5-1 |
 | 예보가 틀릴 때 성능 (보통 오차 0.60, 3~5일 뒤 중기 모델 0.52) | `reports/forecast_error_test.md`, 결과 설명자료 5-1 |
 | Gemini 27문항 시험 27/27 | `reports/llm_eval.md`, 결과 설명자료 5-2 |
-| 기대효과 시나리오 (보통: 잉여일 하루 123MWh) | 결과 설명자료 7-1 |
+| 기대효과 시나리오 (보통: 잉여일 하루 122MWh) | 결과 설명자료 7-1 |
 | 평가 항목별 증거 | `docs/evaluation_mapping.md` |
