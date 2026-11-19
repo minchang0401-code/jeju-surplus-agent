@@ -25,7 +25,7 @@
 2. 압축을 풀고 **윈도우 `실행하기.bat` / 맥 `실행하기.command`** 더블클릭 → 브라우저가 열립니다.
 3. **키가 없어도 실행됩니다.** 이때는 규칙 기반(비상 모드)으로 답하고 저장된 예보를 씁니다.
 4. Gemini로 답하게 하려면: `.env.example`을 `.env`로 복사하고 `LLM_API_KEY=`에 **제출물에 함께 안내한 평가용 Gemini 키**를 넣습니다(사용량 제한을 걸어 둔 키이며, 심사 뒤 삭제합니다).
-5. 자동 시험: `pip install -r requirements-dev.txt` 후 `python -m pytest` → 134개, 키·인터넷 없이 수 초
+5. 자동 시험: `pip install -r requirements-dev.txt` 후 `python -m pytest` → 135개, 키·인터넷 없이 수 초
 
 ## 5. 숫자 근거가 있는 곳
 | 주장 | 확인할 곳 |

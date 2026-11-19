@@ -85,6 +85,7 @@ _PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
 const D = __DATA__;
 const P = D.p, W = D.w, HOME = D.home, KKEY = D.kakao_key, MODE = D.mode || "near";
 const R = D.regions || [], RCOLOR = D.region_color || "#7cc49a";
+const QUICK = "#2a78d6", SLOW = "#5a4fcf";   // 급속 = 파란 점, 완속 = 보라 테두리 고리 (회색은 지도 위에서 안 보여서 바꿈)
 if (MODE !== "focus") document.documentElement.className = "fill";
 let quickOnly = false, eng = null, last = null, touched = false;
 const $ = (id) => document.getElementById(id);
@@ -150,7 +151,10 @@ function makeKakao() {
           const dot = (c, s) => new K.MarkerImage("data:image/svg+xml;charset=utf-8," + encodeURIComponent(
             '<svg xmlns="http://www.w3.org/2000/svg" width="' + s + '" height="' + s + '"><circle cx="' + s / 2 + '" cy="' + s / 2 +
             '" r="' + (s / 2 - 1.5) + '" fill="' + c + '" stroke="white" stroke-width="1.5"/></svg>'), new K.Size(s, s), {offset: new K.Point(s / 2, s / 2)});
-          const imgQ = dot("#2a78d6", MODE === "surplus" ? 8 : 13), imgS = dot("#9a9a96", 11);
+          const ring = (s) => new K.MarkerImage("data:image/svg+xml;charset=utf-8," + encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="' + s + '" height="' + s + '"><circle cx="' + s / 2 + '" cy="' + s / 2 +
+            '" r="' + (s / 2 - 2) + '" fill="white" stroke="' + SLOW + '" stroke-width="3"/></svg>'), new K.Size(s, s), {offset: new K.Point(s / 2, s / 2)});
+          const imgQ = dot(QUICK, MODE === "surplus" ? 8 : 14), imgS = ring(12);
           // 잉여 예보 지도는 권역 원·이름표가 잘 보이도록 충전소를 묶지 않음(작은 점으로)
           const cl = new K.MarkerClusterer({map: map, averageCenter: true, minLevel: MODE === "surplus" ? 15 : 6, disableClickZoom: false});
           const info = new K.InfoWindow({removable: true});
@@ -246,8 +250,8 @@ function makeLeaflet() {
       draw: function () {
         layer.clearLayers();
         for (const p of shown()) {
-          L.circleMarker([p[0], p[1]], {radius: p[2] ? 5 : 4, weight: 1, color: "#fff", fillColor: p[2] ? "#2a78d6" : "#9a9a96",
-            fillOpacity: 0.9}).bindPopup(popupNode(p)).addTo(layer);
+          L.circleMarker([p[0], p[1]], p[2] ? {radius: 6, weight: 1.5, color: "#fff", fillColor: QUICK, fillOpacity: 0.95}
+            : {radius: 4.5, weight: 2.5, color: SLOW, fillColor: "#fff", fillOpacity: 1}).bindPopup(popupNode(p)).addTo(layer);
         }
       },
       me: function (lat, lon, label, acc, isGps) {
@@ -328,7 +332,32 @@ $("quick").onclick = function () {
   this.setAttribute("aria-pressed", quickOnly ? "true" : "false");
   if (eng) eng.draw();
   if (last) showAt.apply(null, last);
+  if (MODE === "near" || MODE === "all") chargerLegend();
 };
+
+// ---------- 범례: 급속(파란 점)·완속(보라 고리) 모양을 그대로 그리고, 지금 무엇을 보고 있는지 함께 보여 줌
+function sym(kind) {
+  const e = document.createElement("span");
+  e.style.cssText = "display:inline-block;width:11px;height:11px;border-radius:50%;margin:0 4px -1px 0;box-sizing:border-box;" +
+    (kind === "q" ? "background:" + QUICK + ";border:1.5px solid #fff;box-shadow:0 0 0 1px " + QUICK
+     : kind === "s" ? "background:#fff;border:3px solid " + SLOW : "background:#eb6834;border:1.5px solid #fff");
+  return e;
+}
+function setLegend(parts) {   // parts: [["q", "급속 1,160곳"], ["s", "완속만"], [null, "글"]]
+  const L0 = $("legend"); L0.innerHTML = "";
+  parts.forEach(function (pt, i) {
+    if (i) L0.appendChild(document.createTextNode(" · "));
+    if (pt[0]) L0.appendChild(sym(pt[0]));
+    const t = document.createElement("span"); t.textContent = pt[1];
+    if (pt[2]) t.style.cssText = "font-weight:700;color:#1a7f4b";
+    L0.appendChild(t);
+  });
+}
+function chargerLegend() {
+  const nQ = P.filter(p => p[2]).length, nS = P.length - nQ;
+  if (quickOnly) setLegend([["q", "급속 " + nQ.toLocaleString() + "곳"], [null, "지금: 급속만 보는 중 (완속 숨김)", true]]);
+  else setLegend([["q", "급속 " + nQ.toLocaleString() + "곳"], ["s", "완속만 " + nS.toLocaleString() + "곳"], [null, "지금: 전체 보는 중"]]);
+}
 
 // ---------- 시작: 카카오맵 → (실패) OpenStreetMap → (실패) 목록만
 // '잉여 예보'·'충전소 전체'는 제주 본섬에 맞춤 (추자도처럼 멀리 떨어진 점 때문에 섬이 작게 보이지 않게)
@@ -363,8 +392,7 @@ if (MODE !== "near") { $("gps").style.display = "none"; $("kksearch").style.disp
 const nQ = P.filter(p => p[2]).length;
 if (MODE === "all") {
   $("list").style.display = "none";
-  $("legend").textContent = "🔵 급속 " + nQ.toLocaleString() + "곳 · ⚪ 완속만 " + (P.length - nQ).toLocaleString() +
-    "곳 · 🟠 풍력발전소 · 숫자 원 = 여러 곳 모임(누르면 확대) · 허브 862·472";
+  chargerLegend();
 } else if (MODE === "surplus") {
   $("list").style.display = "none"; $("quick").style.display = "none";
   if (D.badge) {
@@ -372,13 +400,13 @@ if (MODE === "all") {
     const t = document.createElement("span"); t.textContent = D.badge;
     $("badge").appendChild(dot); $("badge").appendChild(t);
   }
-  $("legend").textContent = "원 크기 = 권역 재생에너지 설비(허브 123 태양광 + 풍력발전현황) · 🔵 급속 충전소(허브 862) · 🟠 풍력발전소";
+  setLegend([[null, "원 크기 = 권역 재생에너지 설비(허브 123 태양광 + 풍력발전현황)"], ["q", "급속 충전소(허브 862)"], ["w", "풍력발전소"]]);
 } else if (MODE === "focus") {
   $("list").style.display = "none"; $("quick").style.display = "none";
-  $("legend").textContent = "🟠 찾은 동네 중심 · 🔵 급속 있음 · ⚪ 완속만";
+  setLegend([["w", "찾은 동네 중심"], ["q", "급속 있음"], ["s", "완속만"]]);
   if (HOME) showAt(HOME.lat, HOME.lon, HOME.name, 0, false);
-} else if (HOME) { showAt(HOME.lat, HOME.lon, "내 동네(" + HOME.name + ")", 0, false); }
-else { say("'📍 내 위치로 찾기'를 누르면 가까운 충전소와 길찾기를 보여 드려요."); }
+} else if (HOME) { chargerLegend(); showAt(HOME.lat, HOME.lon, "내 동네(" + HOME.name + ")", 0, false); }
+else { chargerLegend(); say("'📍 내 위치로 찾기'를 누르면 가까운 충전소와 길찾기를 보여 드려요."); }
 </script></body></html>"""
 
 

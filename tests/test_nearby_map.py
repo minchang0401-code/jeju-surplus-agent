@@ -82,3 +82,10 @@ def test_surplus_mode_and_fill_layout():
     assert '"mode": "surplus"' in h and '"region_color": "rgb(1,2,3)"' in h and "for (const g of R)" in h
     assert 'if (MODE !== "focus") document.documentElement.className = "fill"' in h
     assert "html.fill #map{height:100%" in h
+
+
+def test_quick_and_slow_look_different():
+    """급속(파란 점)과 완속(보라 고리)이 모양·색으로 구분되고, 지금 무엇을 보는지 범례에 나옴."""
+    h = _html()
+    assert 'QUICK = "#2a78d6", SLOW = "#5a4fcf"' in h and "fill=\"white\" stroke=\"' + SLOW" in h
+    assert "지금: 급속만 보는 중" in h and "지금: 전체 보는 중" in h
