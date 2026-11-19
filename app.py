@@ -37,7 +37,7 @@ except Exception:   # Secrets 파일이 없는 PC 실행이면 .env 를 씀
 st.set_page_config(page_title="제주 잉여전력 도우미", page_icon="⚡", layout="wide", initial_sidebar_state="collapsed")
 st.markdown("""<style>
 /* 한 화면(스크롤 없이)에 맞추기: 지도 높이 = 화면 높이 - 나머지(머리말·카드·버튼·그래프) → 화면이 크면 지도도 커짐 */
-:root { --map-h: clamp(200px, calc(100vh - 452px), 620px); }
+:root { --map-h: clamp(200px, calc(100vh - 436px), 620px); }
 /* 지도 칸 자체의 높이를 정하고(넘치면 잘라서 아래 글과 겹치지 않게) 안의 지도는 그 칸을 꽉 채움 */
 .st-key-mapbox { height: var(--map-h) !important; min-height: var(--map-h); overflow: hidden; flex: 0 0 auto !important; }
 .st-key-mapboxfull { height: calc(var(--map-h) + 54px) !important; min-height: calc(var(--map-h) + 54px); overflow: hidden; flex: 0 0 auto !important; }
@@ -152,24 +152,49 @@ pills.append(f"<span class='pill {'ok' if _ls['on'] else ''}'>{'AI 연결' if _l
 st.markdown(f"<h1 title='제주 재생에너지가 남는 시간을 미리 알려 드려요. 그 시간에 전기를 쓰면 버려질 전기를 살릴 수 있어요. "
             f"(데이터 상태는 왼쪽 위 ▸ 메뉴)'>⚡ 제주 잉여전력 도우미 {''.join(pills)}</h1>", unsafe_allow_html=True)
 
-def _hourly_chart(hourly, cur, wins, height: int) -> None:
-    """시간별 잉여 가능성 막대그래프 (밤은 회색 배경, 추천 3시간은 초록 띠, 고른 시각은 검은 선)."""
+def _hourly_chart(hourly, cur, wins, height: int) -> bool:
+    """시간별 잉여 가능성 막대그래프 (밤은 회색 배경, 추천 3시간은 초록 띠, 고른 시각은 검은 선).
+    그래프 아무 데나 누르면 그 시각이 골라짐(검은 선이 옮겨 가고 지도 색이 바뀜). 누르기를 못 쓰는 옛 Streamlit 이면 False."""
     night = night_bands(hourly)
     x = alt.X("ts:T", title=None, axis=alt.Axis(format="%m/%d %H시", labelAngle=0, tickCount="day", grid=False))
     y = alt.Y("prob:Q", title=None, scale=alt.Scale(domain=[0, max(0.6, float(hourly["prob"].max()) + .05)]),
               axis=alt.Axis(format="%"))
     bg = alt.Chart(night).mark_rect(color="#f1f4f3").encode(x="s:T", x2="e:T")
-    bars = alt.Chart(hourly.assign(ts2=hourly["ts"] + pd.Timedelta(minutes=54))).mark_bar().encode(
+    top = max(0.6, float(hourly["prob"].max()) + .05)
+    hd = hourly.assign(ts2=hourly["ts"] + pd.Timedelta(minutes=54), top=top)
+    bars = alt.Chart(hd).mark_bar().encode(
         x=x, x2="ts2:T", y=y,
         color=alt.Color("level:N", scale=alt.Scale(domain=list(LEVEL_COLOR), range=["#f2a93b", "#3fb37c", "#c3ccd3"]),
-                        legend=None),   # 색 = 등급(높음 주황·보통 초록·낮음 회색), 위 카드와 같은 색
+                        legend=None))   # 색 = 등급(높음 주황·보통 초록·낮음 회색), 위 카드와 같은 색
+    # 누르기 판: 시간마다 그래프 높이 전체를 덮는 투명 칸 → 막대가 낮아도 그 시각 어디를 눌러도 골라짐
+    # 끌기: 누른 채 움직이는 동안은 점선(drag)만 브라우저 안에서 따라오고, 손을 떼면(pick) 그 시각으로 확정 → 지도 갱신
+    drag = alt.selection_point(name="drag", fields=["label"], on="mousedown, mousemove[event.buttons > 0]",
+                               nearest=True, clear="mouseup", empty=False)
+    pick = alt.selection_point(name="pick", fields=["label"], on="mouseup", nearest=True, clear=False)
+    hit = alt.Chart(hd).mark_bar(opacity=0.001, cursor="pointer").encode(
+        x="ts:T", x2="ts2:T", y=alt.Y("top:Q", scale=alt.Scale(domain=[0, top])), y2=alt.datum(0),
         tooltip=[alt.Tooltip("label:N", title="시간"), alt.Tooltip("pct:Q", title="가능성(%)"),
-                 alt.Tooltip("level:N", title="등급"), alt.Tooltip("basis:N", title="근거")])
+                 alt.Tooltip("level:N", title="등급"), alt.Tooltip("basis:N", title="근거")]).add_params(drag, pick)
+    drag_rule = alt.Chart(hd).mark_rule(color="#15211d", strokeWidth=2, strokeDash=[4, 3]).encode(x="ts:T").transform_filter(drag)
+    drag_txt = alt.Chart(hd.assign(t=hd["label"] + " · " + hd["pct"].round().astype(int).astype(str) + "%")).mark_text(
+        align="left", dx=5, dy=16, baseline="top", fontSize=12, color="#15211d").encode(
+        x="ts:T", y=alt.value(0), text="t:N").transform_filter(drag)
     rules = alt.Chart(pd.DataFrame({"y": [0.2, 0.5]})).mark_rule(strokeDash=[4, 4], color="#9aa8a2").encode(y="y:Q")
     now_rule = alt.Chart(pd.DataFrame({"ts": [cur["ts"]]})).mark_rule(color="#15211d", strokeWidth=2).encode(x="ts:T")
     win_df = pd.DataFrame([{"s": v["start"], "e": v["end"]} for v in wins]) if wins else pd.DataFrame(columns=["s", "e"])
     win_rect = alt.Chart(win_df).mark_rect(color="#3fb37c", opacity=0.13).encode(x="s:T", x2="e:T")
-    st.altair_chart((bg + win_rect + bars + rules + now_rule).properties(height=height), use_container_width=True)
+    _late = cur["ts"] > hourly["ts"].min() + (hourly["ts"].max() - hourly["ts"].min()) * 0.8   # 오른쪽 끝이면 글을 선 왼쪽에
+    _al, _dx = ("right", -5) if _late else ("left", 5)
+    now_txt = alt.Chart(pd.DataFrame({"ts": [cur["ts"]], "t": [f"{cur['label']} · {cur['pct']:.0f}%"]})).mark_text(
+        align=_al, dx=_dx, dy=2, baseline="top", fontSize=12, fontWeight="bold", color="#15211d").encode(
+        x="ts:T", y=alt.value(0), text="t:N")
+    chart = (bg + win_rect + bars + rules + now_rule + now_txt + drag_rule + drag_txt + hit).properties(height=height)
+    try:
+        st.altair_chart(chart, use_container_width=True, on_select="rerun", selection_mode="pick", key="hourpick")
+        return True
+    except TypeError:   # 누르기(on_select)를 모르는 옛 Streamlit
+        st.altair_chart(chart, use_container_width=True)
+        return False
 
 
 def _html(h: str) -> None:
@@ -222,7 +247,13 @@ with left:
     if hourly is not None and len(hourly):
         wins = best_windows(hourly, hours=3, top=3)
         default = hourly.loc[hourly["prob"].idxmax(), "label"]
-        sel = st.session_state.get("sel_time", default)
+        try:   # 그래프에서 누른 시각 (안 눌렀으면 이전에 고른 시각, 처음엔 가능성이 가장 높은 시각)
+            _rows = (st.session_state.get("hourpick") or {}).get("selection", {}).get("pick") or []
+            if _rows and _rows[0].get("label") in set(hourly["label"]):
+                st.session_state.sel_label = _rows[0]["label"]
+        except Exception:
+            pass
+        sel = st.session_state.get("sel_label") or st.session_state.get("sel_time") or default
         if sel not in set(hourly["label"]):
             sel = default
         cur = hourly[hourly["label"] == sel].iloc[0]
@@ -280,27 +311,26 @@ with left:
                                          tooltip={"html": "{tip}", "style": {"fontSize": "12px"}}, map_style=None),
                                 height=MAP_H, use_container_width=True)
 
-    if with_slider:   # 시각 고르기 (잉여 예보 지도 색·그래프 기준선이 바뀜)
-        # 슬라이더 손잡이 위에 '시각 · 가능성 %(등급)'이 바로 보이게 (옮기면서 값을 확인)
-        _p = dict(zip(hourly["label"], zip(hourly["pct"], hourly["level"])))
-        st.select_slider("지도·그래프 시각", options=hourly["label"].tolist(), value=sel, key="sel_time",
-                         label_visibility="collapsed",
-                         format_func=lambda l: f"{l} · 전기가 남을 가능성 {_p[l][0]:.0f}% ({_p[l][1]})")
-        _hourly_chart(hourly, cur, wins, 112)
+    if with_slider:   # 시각 고르기: 그래프를 누르면 검은 선이 옮겨 가고 잉여 예보 지도 색이 바뀜
+        if not _hourly_chart(hourly, cur, wins, 150):   # 옛 Streamlit 이면 슬라이더로 대신
+            _p = dict(zip(hourly["label"], zip(hourly["pct"], hourly["level"])))
+            st.select_slider("지도·그래프 시각", options=hourly["label"].tolist(), value=sel, key="sel_time",
+                             label_visibility="collapsed",
+                             format_func=lambda l: f"{l} · 전기가 남을 가능성 {_p[l][0]:.0f}% ({_p[l][1]})")
     if cur is not None:
         _src = "출처: " + ", ".join(fc["sources"]) + " · " + fc["note"]
         if wins:
             _html("<div class='reco'><b>추천 시간대(3시간)</b> " + "".join(f"<span class='win'>{v['text']} · {v['prob']:.0%}</span>" for v in wins)
-                  + f"<span class='legend-row' title='{_src}'> ⓘ 출처·안내</span></div>")
+                  + f"<span class='legend-row' title='{_src}'> · 그래프를 누르거나 끌면 그 시각으로 지도가 바뀌어요 ⓘ 출처·안내</span></div>")
         else:
             # 3시간 연속으로는 20%를 못 넘어도, 한 시간이라도 넘는 때가 있으면 그 시간을 알려 줌 (카드·그래프와 어긋나지 않게)
             one = best_windows(hourly, hours=1, top=3)
             if one:
                 _html("<div class='reco'><b>가능성 있는 시간(짧음)</b> " + "".join(f"<span class='win'>{v['text']} · {v['prob']:.0%}</span>" for v in one)
-                      + f"<span class='legend-row' title='{_src}'> · 3시간 이어지는 때는 없어요 ⓘ 출처·안내</span></div>")
+                      + f"<span class='legend-row' title='{_src}'> · 3시간 이어지는 때는 없어요 · 그래프를 누르거나 끌면 그 시각으로 지도가 바뀌어요 ⓘ 출처·안내</span></div>")
             else:
                 _html("<div class='reco'><span class='legend-row'>앞으로 며칠은 재생에너지가 남을 가능성이 20%를 넘는 시간이 없어요.</span>"
-                      f"<span class='legend-row' title='{_src}'> ⓘ 출처·안내</span></div>")
+                      f"<span class='legend-row' title='{_src}'> · 그래프를 누르거나 끌면 그 시각으로 지도가 바뀌어요 ⓘ 출처·안내</span></div>")
 
 
 # ================================================================ 오른쪽: 에이전트 대화 패널
