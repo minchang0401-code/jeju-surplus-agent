@@ -1,102 +1,135 @@
-# 제주 잉여전력 도우미 (AI Agent)
+# 제주 잉여전력 도우미
 
-제주 재생에너지가 남아 전력시장 가격(SMP)이 0원 이하로 떨어지는 **'잉여전력 시간'을 며칠 앞서 예보**하고,
-도민에게 **언제·어디서 전기를 쓰면 좋은지** 쉬운 말로 안내하는 에이전트입니다.
+제주에서 전기가 남을 가능성이 있는 시간을 예측하고, 도민의 일정에 맞는 가전 사용·전기차 충전 시간과 주변 충전소를 안내하는 AI Agent입니다. 날짜·지도·그래프로 예측을 탐색하고, 생활 언어로 계획을 요청한 뒤 근거를 확인하고 캘린더에 저장할 수 있습니다.
 
-- **바로 실행:** 윈도우 `실행하기.bat` / 맥 `실행하기.command` 더블클릭 → `docs/manual.md`
-- **AI(LLM):** Google Gemini 3.5 Flash-Lite가 도구 11개를 골라 부르고, 도구 결과로만 답합니다. 키가 없거나 연결이 끊기면 규칙 기반(비상 모드)으로 자동 전환합니다.
-- **필수 데이터:** 제주데이터허브 579·862·1225·1226·877·123·472
+예측 대상은 제주 시간별 전력시장 가격(SMP)이 0원 이하가 될 가능성입니다. 실제 잉여 전력량, 출력제어 발생 또는 사용자 전기요금 할인을 보장하지 않습니다. 실제 전력 배분·가전 제어·충전소 예약 기능은 없습니다.
 
-## 문서
-| 문서 | 내용 |
-|---|---|
-| `docs/judge_quickstart.md` | **심사위원용 3분 확인 안내**: 웹 주소, 질문 5개, 키 없이 실행, 평가용 키 넣는 곳 |
-| `docs/manual.md` | **실행 매뉴얼**: 설치, 키 발급·설정, 실행, 오류·제약사항 |
-| `docs/result_report.md` | **결과 설명자료**: 문제 정의, Agent 구조, 주요 기능, 실행 결과, 검증·한계, 센터 활용 방안 |
-| `docs/data_spec.md` | **데이터 활용 명세**: 데이터 목록·출처·이용조건, 전처리·분석 흐름 |
-| `docs/ai_disclosure.md` | **AI 사용·외부 API·외부 데이터·오픈소스 고지**, 프롬프트 위치, 팀원 코드·자료 활용 |
-| `docs/evaluation_mapping.md` | **평가기준 대응표**: 심사 항목별 기능과 증거 파일, 제출물 점검표 |
-| `reports/report.md` | 예측 성능 (시험 기간 2026-01-01 ~ 2026-11-17) |
-| `reports/forecast_error_test.md` | 예보 날씨 오차 시험: 예보가 틀릴 때 성능 (보통 오차에서 관측 대비 96%) |
-| `reports/llm_eval.md` | Gemini 27문항 시험 결과와 답변 전문 (27/27) |
-| `reports/scenario_results.md` | Agent 시험 결과 |
+문서 갱신 기준: 2026-11-19.
 
-## 파일 구성
-| 파일 | 역할 |
-|---|---|
-| `app.py` | 화면: 왼쪽 = 5일 예보 카드·지도 2종(잉여 예보 지도 / 충전소 지도, 지도 안 '📍 내 주변 충전소')·시간대별 그래프 카드(누르면 그 시각 선택, 제목 줄에 선택 시각·추천 시간대) (노트북 한 화면에 맞춤, 다크 모드 대응), 오른쪽 = 👤 내 정보 카드·에너지 도우미(빠른 질문 4개·대화·근거 보기), 사이드바 = 데이터·AI 상태. 예보 자동 갱신 |
-| `dashboard_view.py` | 화면용 계산: 권역 8곳의 재생에너지 설비용량(허브 123 태양광 + 풍력발전현황), 시간별 예보 표, 추천 3시간대, 지도 색 |
-| `agent.py` | 에이전트: 시스템 지침(`_system_prompt`), LLM 도구 호출, 비상 모드(`_route`) |
-| `tools.py` | 도구 11개와 도구 명세(`TOOL_SPECS`), 지도용 점(`map_points`) |
-| `grid.py` | 계통 기록(출력제어·전력수요·연계선·플러스 DR) 계산, 원자료는 `data/grid_raw/` |
-| `appliances.py` | 기기 사전 16종(이름·다른 이름·1회 전력량·걸리는 시간·옮기기 쉬운 정도·출처), 전기차 배터리 용량 |
-| `facts.py` | 답변에 쓰는 확인된 사실·출처, 주의 규칙 |
-| `config.py` | 경로, 공휴일, 기상 지점, LLM 기본값 (키는 `.env`) |
-| `features.py` / `train.py` / `predict.py` | 변수 만들기 / 학습·평가 / 예보 |
-| `collect_smp.py` | EPSIS 제주 시간별 SMP (정답, 키 불필요) |
-| `collect_hub.py` | 제주데이터허브 579·1226·1225·862 (프로젝트키) |
-| `collect_weather.py` | 기상청 ASOS 과거 관측(API허브 키) / 단기예보·중기예보(공공데이터포털 키) |
-| `prepare_files.py` | 파일형 허브 데이터 877·123·472 정리 |
-| `user_profile.py` | 내 정보(동네·차종·출퇴근·요금제) → 질문 기본값, 주소창 저장 |
-| `nearby_map.py` | 충전소 지도(내 주변·충전소 전체·답변 근거): 카카오맵 → 실패 시 OpenStreetMap. GPS(브라우저 안에서만) → 제주 밖·실패 시 저장한 동네(빨간 안내) → 카카오맵 길찾기 |
-| `calendar_link.py` | 추천 시간대 → 구글 캘린더 링크·.ics 파일(10분 전 알림) |
-| `tests/` | **pytest 자동 시험 137개** (아래 '자동 시험') |
-| `run_scenarios.py` | Agent 시험 (시나리오 5개, 질문 58개, 이어지는 질문 8개, 생활 언어 답변 10개) |
-| `experiments/` | 사전 실험(Open-Meteo), 그림 그리기, **예보 날씨 오차 시험**(`forecast_error_test.py`) |
+## 빠른 실행
 
-### 도구 11개와 데이터
-| 도구 | 하는 일 | 데이터 |
-|---|---|---|
-| ① forecast_surplus | 오늘~5일 뒤 시간별 잉여 확률 (범위 밖은 예보하지 않음) | EPSIS(정답), 기상청 단기예보, **허브 579**(학습) |
-| ② recommend_actions | 가전·충전 추천 시간 | ①, 요금 사실 |
-| ③ find_chargers | 동네 충전소·급속. 낮(10~15시)에 붐볐던 곳·대기가 잦았던 곳은 뒤로 보내고 이유를 말함 | **허브 862, 1226, 1225** |
-| ④ ev_charging_habits | 도민 충전 시각 vs 잉여 시간 | **허브 1226**, EPSIS |
-| ⑤ explain_surplus | 언제·왜 생기나 (통계, 일사·바람, 설비 증가) | EPSIS, **허브 877·123·472** |
-| ⑥ check_past_forecast | 지난 예보 검증 | 예보 기록 / 시험 기간 재현 예보, EPSIS |
-| ⑦ data_status | 데이터·연결 상태 | 전체 |
-| ⑧ explain_benefits | 도민이 얻는 것·얻지 못하는 것 | 요금 사실, 허브 1226 |
-| ⑨ how_to_act | 실천 방법 (예약 기능, 피할 시간, 요금제 문의처) | 요금 사실 |
-| ⑩ plan_appliance_use | 생활 언어 질문("오늘 저녁에 세탁기 돌리려고", "차 배터리 반 남았어")에서 기기를 알아내 걸리는 시간·전력량을 계산하고, 예보에서 남는 전기가 가장 많은 **연속 시간대**를 찾음 | 기기 사전(`appliances.py`, 공인·제조사 자료), ①. 출근·외출 일정 반영 |
-| ⑪ grid_records | 버려진 재생에너지(출력제어), 잉여 날의 낮 수요·연계선, 역송, 플러스 DR | 한국전력거래소 공공데이터 4종 (팀원 B 수집) |
+프로젝트 전체를 내려받아 압축을 풀고 해당 폴더에서 실행합니다. `app.py`만 받으면 데이터·모델·화면 구성 파일이 빠집니다. Python 3.11 이상이 필요하며 최종 회귀검사 환경은 macOS / Python 3.14.4입니다.
 
-## 성능 요약 (2026-01-01 ~ 2026-11-17, 학습에 쓰지 않은 기간)
-| 방법 | 날짜 PR-AUC | 날짜 정밀도 | 시간 PR-AUC |
-|---|---|---|---|
-| 단순 규칙 (6~9월 제외 12~14시) | 0.253 | 0.256 | 0.163 |
-| 과거 비율 (월·시각·휴일) | 0.322 | 0.329 | 0.239 |
-| 1차 모델 (달력·최근 경향) | 0.390 | 0.400 | 0.256 |
-| **날씨 모델 (+기상청·허브 579, 월별 재학습)** | **0.651** | **0.653** | **0.568** |
-| 날씨 모델에 예보만큼 오차를 넣었을 때 (보통 오차, 고정 학습) | 0.601 | — | — |
-| 중기 모델 (3~5일 뒤용, 중기예보 수준 날씨, 큰 오차 넣었을 때) | 0.524 | — | — |
+macOS / Linux:
 
-- 무작위로 찍었을 때의 날짜 정밀도는 0.165입니다.
-- **주의:** 날씨 모델 성능은 **관측된 날씨**를 넣고 잰 값입니다. 실제 서비스는 예보 날씨를 쓰므로 이보다 낮을 수 있습니다. 예보 기록을 쌓아 따로 확인합니다(`docs/result_report.md` 8장).
-
-## 실행 (명령어)
 ```bash
-pip install -r requirements.txt
-cp .env.example .env                 # 키 입력 (비워 두면 그 기능만 건너뜀)
-python -m streamlit run app.py       # 화면 (예보는 열 때 자동 갱신)
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m streamlit run app.py --browser.gatherUsageStats false
 ```
-데이터를 새로 받거나 다시 학습하는 순서는 `docs/manual.md` 4장에 있습니다.
 
-## 자동 시험 (재현성 확인)
+Windows PowerShell — 활성화 스크립트 없이 실행:
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m streamlit run app.py --browser.gatherUsageStats false
+```
+
+주소는 기본 `http://localhost:8501`입니다. 종료는 서버 터미널에서 `Ctrl+C`를 누릅니다. 포트가 사용 중이면 `--server.port 8502`를 붙입니다.
+
+Windows의 `실행하기.bat`, macOS의 `실행하기.command`로도 실행할 수 있습니다. 최초 실행 시 `.venv`와 패키지를 설치하므로 Python과 인터넷이 필요합니다. 기존 `.venv`가 있으면 실행기가 패키지를 다시 설치하지 않으므로 업데이트 후 위 설치 명령을 다시 실행하세요.
+
+## API 없이 체험하기
+
+저장된 `data/`와 `models/`가 있으면 데이터 API와 LLM 키 없이 기본 분석과 규칙 기반 답변을 이용할 수 있습니다. 지도 배경·외부 길찾기·Google Calendar는 인터넷이 필요합니다. 저장된 예보가 미래 날짜를 덮지 못하면 달력·최근 경향 모델의 참고치로 예측합니다.
+
+LLM 호출을 명시적으로 끄려면 아래처럼 실행합니다. 로컬에 별도로 받은 `eval.env`가 있을 때도 적용됩니다.
+
 ```bash
-pip install -r requirements-dev.txt   # pytest 추가
-python -m pytest                       # 137개, 키·인터넷 없이 수 초
+# macOS / Linux — 현재 실행에만 적용
+LLM_PROVIDER=none python -m streamlit run app.py
 ```
-| 시험 파일 | 확인하는 것 |
+
+```powershell
+# Windows PowerShell
+$env:LLM_PROVIDER = "none"
+.\.venv\Scripts\python.exe -m streamlit run app.py
+```
+
+`eval.env`는 Git 저장소에 포함되지 않습니다. 파일이 없는데 평가용 키가 자동 제공된다고 가정하지 마세요.
+
+## 환경변수 설정
+
+필요한 기능만 연결합니다. 예시는 비밀값이 없는 [.env.example](.env.example)에 있습니다.
+
+```bash
+# macOS / Linux
+cp .env.example .env
+```
+
+```powershell
+# Windows PowerShell
+Copy-Item .env.example .env
+```
+
+예시 기본값은 `LLM_PROVIDER=none`입니다. LLM을 사용하려면 `.env`의 공급자·키·모델 설정을 함께 확인하세요. 파일 로딩 우선순위는 프로세스 환경변수 → `.env` → 별도로 제공된 `eval.env`이며, 빈 값도 뒤 파일의 같은 항목을 막습니다. 변경 후 서버를 종료하고 다시 실행합니다.
+
+사이드바의 ‘데이터 및 연결 상태’에 표시되는 ‘설정됨’은 인증 정보 등록 여부입니다. 실제 API 연결 성공은 해당 기능 실행과 답변의 ‘근거 보기’에서 확인합니다. 상세 변수와 클라우드 Secrets 설정은 [실행 매뉴얼](docs/manual.md#3-환경변수와-api-설정)을 참고하세요.
+
+## 사용자 흐름
+
+1. 별도 로그인 화면 없이 게스트로 진입합니다.
+2. 환영 팝업에서 이용 안내·생활 설정·준비 완료 단계를 확인합니다. X나 ‘바로 둘러보기’로 닫을 수 있습니다.
+3. 날짜를 골라 해당 날짜의 추천 구간을 보고, 그래프를 눌러 지도 시각을 바꿉니다. 범위는 오늘부터 5일 뒤까지 6개 날짜입니다.
+4. ‘내 생활 설정’의 ‘설정 변경’에서 동네·차종·평일 외출시간·요금제를 조정합니다.
+5. ‘생활 계획’에서 빠른 질문이나 직접 질문으로 계획을 요청합니다. 질문에 명시한 조건이 저장된 기본값보다 우선합니다.
+6. ‘근거 보기’에서 사용한 도구·자료·계산 결과를 확인하고 유효한 추천 시간을 캘린더에 저장합니다.
+
+‘다시 보지 않기’만 해당 브라우저 저장소에 유지됩니다. 생활 설정과 대화는 게스트 세션에만 남으며 재접속·서버 재시작 시 사라질 수 있습니다. 소셜 로그인과 계정 보관은 준비 중입니다. 자세한 조작법은 [사용자 매뉴얼](docs/manual.md#4-사용자-매뉴얼)에 있습니다.
+
+## Agent와 데이터
+
+| 구성 | 역할 |
 |---|---|
-| `tests/test_data_model.py` | 정답 데이터 숫자(900일, 잉여 347시간·127일), 시각 표기, 날씨 모델이 기준선보다 나은지, 예보 오차 시험이 시험 기간 날씨만 바꾸는지 |
-| `tests/test_tools.py` | 도구 11개 명세, 예보 범위(5일) 밖은 예보하지 않음, 기기 찾기·전기차 계산, 저녁 사용 정직 안내, 보일러·출근 일정, 충전소 찾기, 계통 기록 숫자, 지도 좌표 |
-| `tests/test_agent.py` | 질문 이해 58개·이어지는 질문 8개·답변 10개·시나리오 5개(`run_scenarios.py`와 같은 목록), LLM 한도 초과·지연 재시도, 실패 시 규칙 기반 전환과 키 가림 |
-| `tests/test_profile_calendar.py` | 내 정보가 기본값으로 쓰이고 질문이 우선하는지, 캘린더 링크·.ics(10분 전 알림) |
-| `tests/test_nearby_map.py` | 지도의 세 가지 동작(GPS·동네 대체·길찾기), 카카오맵 → OpenStreetMap 전환, 제주 밖 빨간 안내, 이름이 스크립트를 깨지 않는지, 자바스크립트 문법 |
-| `tests/test_dashboard_view.py` | 화면 그래프의 시각 표기(1~24 = 구간 끝), 추천 3시간대, 밤 구간, 권역 설비용량 |
-| `tests/test_security.py` | 소스·문서에 API 키가 없는지, `.env`가 제외되는지 |
+| `agent.py` | LLM 질문 해석·도구 선택·설명, 실패 시 규칙 기반 응답 |
+| `tools.py` / `planning.py` / `appliances.py` | 11개 도구, 외출 제약과 기기별 사용시간·충전량 계산 |
+| `features.py` / `train.py` / `predict.py` | 변수 생성, CPU 기반 모델 학습·평가, 시간별 예측 |
+| `time_utils.py` | 서버 시간대와 무관한 한국 시간 날짜·시각 처리 |
+| `app.py` / `dashboard_view.py` / `main.css` | 날짜·예측 요약·그래프·반응형 화면 |
+| `onboarding.py` / `onboarding.css` / `components/` | 닫을 수 있는 단계별 안내와 브라우저 숨김 설정 |
+| `guest_session.py` / `user_profile.py` | 게스트 상태·생활 설정·질문 기본값 |
+| `nearby_map.py` / `calendar_link.py` | 지도와 위치 기반 탐색, Google Calendar 링크·ICS 생성 |
+| `status_view.py` | 연결 설정·예측 자료·제주데이터허브 자료 상태 표시 |
+| `grid.py` / `facts.py` | 계통 기록 계산, 설명에 사용하는 사실과 출처 |
 
-시험 중에는 `.env`에 LLM 키가 있어도 Gemini를 부르지 않습니다(`tests/conftest.py`). Gemini 응답 시험은 `python run_llm_eval.py`로 따로 합니다.
+제주데이터허브 579·862·1225·1226·877·123·472를 기상 학습, 충전소 탐색, 이용 이력 분석, 설비 규모·기후 설명에 사용합니다. 외부 자료는 EPSIS 제주 SMP, 기상청 관측·단기·중기예보, 전력거래소 계통 기록입니다. 자료별 제공 기간과 출처는 [데이터 명세](docs/data_spec.md)에 있습니다.
 
-## 주의
-- API 키는 `.env`에만 넣고 제출물·GitHub에 올리지 마세요.
-- 이 서비스는 '지금 잉여 시간에 쓰면 요금이 자동으로 싸진다'고 말하지 않습니다. 제주형 요금제는 추진 단계입니다(`facts.py`).
+LLM은 질문 해석과 설명을 맡고, 확률은 scikit-learn의 HistGradientBoostingClassifier가 계산합니다. `config.py`는 Gemini·OpenAI·Upstage·Anthropic 설정을 지원하지만 공급자별 실연결은 별도 확인해야 합니다. 대형언어모델을 로컬 GPU에 올리지 않습니다.
+
+## 의존성
+
+| 파일 | 용도 |
+|---|---|
+| [requirements.txt](requirements.txt) | 앱·수집·학습 실행 범위: pandas, NumPy, scikit-learn, joblib, requests, Streamlit, Altair, pydeck |
+| [requirements-dev.txt](requirements-dev.txt) | 실행 의존성 + pytest |
+| [requirements-tested.txt](requirements-tested.txt) | 최종 회귀검사에서 확인한 실행 패키지 버전 고정값 |
+
+그림 재생성 등 일부 `experiments/` 스크립트는 별도로 matplotlib와 한글 글꼴이 필요합니다. 앱 실행에는 matplotlib가 필요하지 않습니다. 지도는 카카오맵 또는 Leaflet·외부 지도 타일을 브라우저에서 불러옵니다.
+
+## 검증과 성능 기록
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest
+python run_scenarios.py
+```
+
+2026-11-19 최종 수정본에서 자동 검사 178개, 규칙 기반 질문 이해 58/58, 후속 질문 8/8, 생활 언어 답변 10/10, 시나리오 5/5를 확인했습니다. pytest는 LLM을 대체하고 시나리오 실행도 LLM을 끄므로 API 응답 품질 시험과 다릅니다. 시나리오 실행은 `reports/scenario_results.md`를 갱신합니다.
+
+실제 LLM 시험은 키 설정 후 `python run_llm_eval.py`로 따로 실행합니다. 외부 요청과 비용·한도가 발생할 수 있고 결과 파일을 갱신합니다. 저장된 Gemini 27/27 기록은 이전 시험이며 최종 로직 수정 후의 전체 재시험 결과는 아닙니다.
+
+저장된 모델 보고서의 날짜 PR-AUC 0.651, 시간 PR-AUC 0.568은 관측 날씨를 사용한 과거 월별 재학습 평가입니다. 65.1% 정확도나 실제 예보 운영 성능을 뜻하지 않습니다. 최신 결측 처리 변경 이후의 재학습·재평가와 운영 예보 누적 검증이 필요합니다.
+
+## 문서와 제약사항
+
+- [설치·실행 및 사용자 매뉴얼](docs/manual.md)
+- [오류 해결과 제약사항](docs/troubleshooting.md)
+- [심사위원 빠른 확인](docs/judge_quickstart.md)
+- [데이터 명세](docs/data_spec.md)
+- [결과 설명자료](docs/result_report.md)
+- [AI·외부 서비스 사용 고지](docs/ai_disclosure.md)
+- [저장된 모델 평가](reports/report.md) / [날씨 오차 실험](reports/forecast_error_test.md) / [이전 LLM 시험](reports/llm_eval.md)
+
+충전소 정보·과거 이용 이력은 실시간 빈자리·고장·대기시간이 아닙니다. 지도 색은 제주 전체 예측이고 원 크기는 지역 설비 규모입니다. 도민 참여에 따른 실제 전력 이동·출력제어 감소·요금 절감은 아직 측정하지 않았습니다. 전체 제한은 오류·제약사항 문서를 확인하세요.

@@ -1,11 +1,12 @@
-# 실제로 실행해 본 환경 기록 (설치용이 아니라 참고용).
-# 문제가 생기면 이 버전에 맞춰 설치해 보세요: pip install -r requirements-tested.txt
-# - 개발 PC (macOS, Python 3.14.6): 아래 버전
-# - 개발 서버 (Linux, Python 3.13): pandas 3.0.5, numpy 2.5.3, 나머지 같음
-# - Streamlit Community Cloud (Linux, Python 3.14.10): requirements.txt 로 설치해 정상 동작 확인 (2026-11-18)
+# 2026-11-19 최종 회귀검사 환경: macOS / Python 3.14.4.
+# 아래 실행 패키지로 pytest 178개 통과 (검사 도구는 pytest 9.2.0).
+# python -m pip install -r requirements-tested.txt
+# 이 파일은 직접 의존성 고정 목록이며 전체 전이 의존성 lock 파일은 아닙니다.
 pandas==3.1.1
 numpy==2.5.5
 scikit-learn==1.9.1
 joblib==1.6.0
 requests==2.34.2
 streamlit==1.67.0
+altair==6.3.0
+pydeck==0.9.3

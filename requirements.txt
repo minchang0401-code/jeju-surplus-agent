@@ -1,8 +1,12 @@
-# 시험해 본 버전 범위 (아래 기록 참고). 다음 큰 버전(major)은 동작이 바뀔 수 있어 막아 둠.
-# Python 3.11 이상 필요 (pandas 3 이 3.11 이상만 지원). 시험한 버전: 3.13, 3.14.
+# 앱·데이터 수집·모델 학습용. Python 3.11 이상.
+# 2026-11-19 macOS / Python 3.14.4에서 회귀검사 완료.
+# 설치 버전 고정값은 requirements-tested.txt 참고.
 pandas>=3.0,<4
 numpy>=2.0,<3
 scikit-learn>=1.6,<2
 joblib>=1.4,<2
 requests>=2.31,<3
 streamlit>=1.50,<2
+# 앱에서 직접 import하므로 전이 의존성에만 맡기지 않고 명시합니다.
+altair>=5,<7
+pydeck>=0.9,<1

@@ -1,4 +1,9 @@
 .env
-__pycache__/
-data/forecast_log.csv
 eval.env
+.streamlit/secrets.toml
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/forecast_log.csv
