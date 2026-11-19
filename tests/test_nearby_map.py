@@ -72,3 +72,13 @@ def test_outside_jeju_warning_is_red_banner_over_map():
     assert 'id="warn" role="alert"' in h and "#d32f2f" in h        # 빨간 안내 상자
     assert 'useHome("📍 GPS로 위치는 확인했어요' in h                   # 제주 밖이면 잡힌 거리 안내
     assert "position:absolute" in h                                  # 지도 위에 겹쳐 높이가 늘지 않음
+
+
+def test_surplus_mode_and_fill_layout():
+    """잉여 예보 지도도 같은 지도(카카오맵 → OpenStreetMap)로 그리고, focus 를 뺀 모드는 iframe 높이를 꽉 채움."""
+    g = tools.charger_places().head(30)
+    regs = [[33.47, 126.53, 5000.0, "제주시 동지역\n300MW", "설명"]]
+    h = nearby_map_html(g, None, None, kakao_key="TEST", mode="surplus", regions=regs, region_color="rgb(1,2,3)")
+    assert '"mode": "surplus"' in h and '"region_color": "rgb(1,2,3)"' in h and "for (const g of R)" in h
+    assert 'if (MODE !== "focus") document.documentElement.className = "fill"' in h
+    assert "html.fill #map{height:100%" in h

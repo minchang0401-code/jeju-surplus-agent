@@ -24,12 +24,25 @@ _PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
 <link rel="stylesheet" href="__LEAFLET_CSS__">
 <style>
  body{margin:0;font-family:"Noto Sans KR",system-ui,-apple-system,sans-serif;color:#1b1b1b;font-size:15px}
- .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:2px 0 8px}
+ .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:2px 0 6px}
+ /* 채우기 배치(focus 를 뺀 모드): iframe 높이 전체를 쓰고, 지도가 남는 높이를 다 차지 → 화면 크기에 맞춰 늘고 줄어듦 */
+ html.fill, html.fill body{height:100%}
+ html.fill body{display:flex;flex-direction:column;overflow:hidden}
+ html.fill #main{flex:1;min-height:0;display:flex;gap:10px}
+ html.fill #wrap{flex:1;min-width:0}
+ html.fill #map{height:100%;min-height:180px}
+ html.fill #list{width:280px;overflow:auto;margin-top:0}
+ html.fill #list .row{flex-direction:column;gap:2px;font-size:13.5px;padding:6px 2px}
+ @media (max-width:640px){ html.fill #main{flex-direction:column} html.fill #list{width:auto;max-height:40%} }
+ #legend{position:absolute;left:10px;bottom:10px;z-index:1050;background:rgba(255,255,255,.92);border-radius:8px;
+   padding:5px 9px;font-size:12px;color:#33413c;box-shadow:0 1px 4px rgba(0,0,0,.12);max-width:75%}
+ #legend:empty{display:none}
+ #engine{margin-left:auto}
  button{font-size:15px;padding:8px 14px;border-radius:10px;border:1px solid #2a78d6;background:#2a78d6;color:#fff;cursor:pointer}
  button.sub{background:#fff;color:#2a78d6}
  button.on{background:#1a7f4b;border-color:#1a7f4b;color:#fff;font-weight:600}
  #msg{color:#52514e;font-size:14px;min-height:20px}
- #engine{color:#7a7974;font-size:12px;margin-top:2px}
+ #engine{color:#7a7974;font-size:12px}
  #map{height:__HEIGHT__px;border-radius:12px;background:#e8eff3}
  #wrap{position:relative}
  /* 꼭 봐야 하는 안내(제주 밖·위치 실패): 지도 위쪽에 겹쳐 띄움 → 높이가 늘지 않아 스크롤이 생기지 않음 */
@@ -48,19 +61,26 @@ _PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
  a{color:#2a78d6;white-space:nowrap}
  .me{width:16px;height:16px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 1px #888}
  .pop{padding:8px 10px;font-size:13px;line-height:1.5;white-space:nowrap}
+ .rlabel{font-size:12px;font-weight:700;color:#15211d;text-align:center;white-space:pre;text-shadow:0 0 3px #fff,0 0 3px #fff}
+ .rlabel-l{background:none;border:none;box-shadow:none;font-size:12px;font-weight:700;color:#15211d;white-space:pre;
+   text-shadow:0 0 3px #fff,0 0 3px #fff}
 </style></head><body>
 <div class="bar" id="bar">
  <button id="gps">📍 내 위치로 찾기</button>
  <button class="sub" id="quick" aria-pressed="false">급속만 보기: 끔</button>
- <a target="_blank" rel="noopener" href="https://map.kakao.com/link/search/%EC%A0%84%EA%B8%B0%EC%B0%A8%EC%B6%A9%EC%A0%84%EC%86%8C">카카오맵에서 내 주변 충전소 검색 ↗</a>
+ <a id="kksearch" target="_blank" rel="noopener" href="https://map.kakao.com/link/search/%EC%A0%84%EA%B8%B0%EC%B0%A8%EC%B6%A9%EC%A0%84%EC%86%8C">카카오맵에서 내 주변 충전소 검색 ↗</a>
+ <span id="engine"></span>
 </div>
 <div id="msg"></div>
-<div id="wrap"><div id="map"></div><div id="warn" role="alert"><span id="warnText"></span><button id="warnX" title="닫기" aria-label="안내 닫기">✕</button></div></div>
-<div id="engine"></div>
+<div id="main">
+<div id="wrap"><div id="map"></div><div id="legend"></div><div id="warn" role="alert"><span id="warnText"></span><button id="warnX" title="닫기" aria-label="안내 닫기">✕</button></div></div>
 <div id="list"></div>
+</div>
 <script>
 const D = __DATA__;
 const P = D.p, W = D.w, HOME = D.home, KKEY = D.kakao_key, MODE = D.mode || "near";
+const R = D.regions || [], RCOLOR = D.region_color || "#7cc49a";
+if (MODE !== "focus") document.documentElement.className = "fill";
 let quickOnly = false, eng = null, last = null, touched = false;
 const $ = (id) => document.getElementById(id);
 // kind: "warn" = 빨간 안내를 지도 위에 띄움(제주 밖·위치 실패), "ok" = GPS 성공(파란 글씨), 없으면 보통 안내
@@ -129,6 +149,17 @@ function makeKakao() {
           const cl = new K.MarkerClusterer({map: map, averageCenter: true, minLevel: 6, disableClickZoom: false});
           const info = new K.InfoWindow({removable: true});
           const meOverlays = [];
+          for (const g of R) {   // 잉여 예보 지도: 권역 원 (크기 = 재생에너지 설비, 색 = 섬 전체 잉여 가능성)
+            const rc = new K.Circle({center: new K.LatLng(g[0], g[1]), radius: g[2], strokeWeight: 2, strokeColor: "#ffffff",
+              fillColor: RCOLOR, fillOpacity: 0.6});
+            rc.setMap(map);
+            const lb = document.createElement("div"); lb.className = "rlabel"; lb.textContent = g[3];
+            new K.CustomOverlay({position: new K.LatLng(g[0], g[1]), content: lb, map: map, yAnchor: 0.5, zIndex: 3});
+            K.event.addListener(rc, "click", function () {
+              const box = document.createElement("div"); box.className = "pop"; box.textContent = g[4];
+              info.setContent(box); info.setPosition(new K.LatLng(g[0], g[1])); info.open(map);
+            });
+          }
           for (const w of W) {
             const wc = new K.Circle({center: new K.LatLng(w[0], w[1]), radius: 250 + w[2] * 12, strokeWeight: 1, strokeColor: "#ffffff",
               fillColor: "#eb6834", fillOpacity: 0.75});
@@ -193,6 +224,10 @@ function makeLeaflet() {
     });
     osm.addTo(map);
     const layer = L.layerGroup().addTo(map), meLayer = L.layerGroup().addTo(map);
+    for (const g of R) {
+      L.circle([g[0], g[1]], {radius: g[2], weight: 2, color: "#fff", fillColor: RCOLOR, fillOpacity: 0.6})
+        .bindTooltip(g[3], {permanent: true, direction: "center", className: "rlabel-l"}).bindPopup(g[4]).addTo(map);
+    }
     for (const w of W) {
       L.circleMarker([w[0], w[1]], {radius: 5 + Math.sqrt(w[2]) * 1.2, weight: 1, color: "#fff", fillColor: "#eb6834",
         fillOpacity: 0.85}).bindTooltip("풍력발전소 " + w[2] + "MW").addTo(map);
@@ -292,7 +327,8 @@ $("quick").onclick = function () {
 // ---------- 시작: 카카오맵 → (실패) OpenStreetMap → (실패) 목록만
 function fitPoints() {
   const pts = shown().map(p => [p[0], p[1]]);
-  if (MODE === "all") for (const w of W) pts.push([w[0], w[1]]);
+  if (MODE === "all" || MODE === "surplus") for (const w of W) pts.push([w[0], w[1]]);
+  for (const g of R) pts.push([g[0], g[1]]);
   if (MODE === "focus" && HOME) pts.push([HOME.lat, HOME.lon]);
   return pts;
 }
@@ -315,13 +351,18 @@ const startMap = KKEY
   : makeLeaflet();
 startMap.then(ready).catch(noMap);
 // 모드: near = 내 주변(GPS·목록) / all = 제주 전체(GPS·목록 없음) / focus = 답변에서 찾은 충전소만
-if (MODE !== "near") $("gps").style.display = "none";
+if (MODE !== "near") { $("gps").style.display = "none"; $("kksearch").style.display = "none"; }
+const nQ = P.filter(p => p[2]).length;
 if (MODE === "all") {
   $("list").style.display = "none";
-  say("점을 누르면 이름과 길찾기가 나와요. 숫자가 적힌 원은 충전소 여러 곳이 모인 곳이에요(누르면 확대).");
+  $("legend").textContent = "🔵 급속 " + nQ.toLocaleString() + "곳 · ⚪ 완속만 " + (P.length - nQ).toLocaleString() +
+    "곳 · 🟠 풍력발전소 · 숫자 원 = 여러 곳 모임(누르면 확대) · 허브 862·472";
+} else if (MODE === "surplus") {
+  $("list").style.display = "none"; $("quick").style.display = "none";
+  $("legend").textContent = "원 크기 = 권역 재생에너지 설비(허브 123 태양광 + 풍력발전현황) · 🔵 급속 충전소(허브 862) · 🟠 풍력발전소";
 } else if (MODE === "focus") {
   $("list").style.display = "none"; $("quick").style.display = "none";
-  say("🟠 찾은 동네 중심 · 🔵 급속 있음 · ⚪ 완속만 — 점을 누르면 이름과 길찾기가 나와요.");
+  $("legend").textContent = "🟠 찾은 동네 중심 · 🔵 급속 있음 · ⚪ 완속만";
   if (HOME) showAt(HOME.lat, HOME.lon, HOME.name, 0, false);
 } else if (HOME) { showAt(HOME.lat, HOME.lon, "내 동네(" + HOME.name + ")", 0, false); }
 else { say("'📍 내 위치로 찾기'를 누르면 가까운 충전소와 길찾기를 보여 드려요."); }
@@ -329,9 +370,10 @@ else { say("'📍 내 위치로 찾기'를 누르면 가까운 충전소와 길�
 
 
 def nearby_map_html(chargers, wind=None, home: dict | None = None, height: int = 430, kakao_key: str | None = None,
-                    mode: str = "near") -> str:
+                    mode: str = "near", regions: list | None = None, region_color: str | None = None) -> str:
     """mode: 'near'(내 주변: GPS 버튼·가까운 5곳 목록) / 'all'(제주 전체: 모든 점, 목록 없음)
-    / 'focus'(답변에서 찾은 충전소만, home=찾은 동네 중심).
+    / 'focus'(답변에서 찾은 충전소만, home=찾은 동네 중심) / 'surplus'(잉여 예보 지도: 권역 원 regions + 급속 충전소).
+    focus 를 뺀 모드는 iframe 높이를 꽉 채움(화면 크기에 맞춰 지도 높이가 바뀜). height 는 focus 에서만 씀.
     chargers: name·lat·lon·quick·quick_count 열이 있는 표. wind: lat·lon·mw 표(선택).
     home: {'name': '노형', 'lat': .., 'lon': ..} — 저장한 내 동네 (없으면 None).
     kakao_key: 카카오 JavaScript 키 (없으면 OpenStreetMap). 브라우저용 공개 키이며 등록한 앱 주소에서만 동작."""
@@ -339,7 +381,9 @@ def nearby_map_html(chargers, wind=None, home: dict | None = None, height: int =
            for r in chargers.itertuples()]
     wd = [] if wind is None else [[round(float(r.lat), 5), round(float(r.lon), 5), float(r.mw)] for r in wind.itertuples()]
     data = json.dumps({"p": pts, "w": wd, "home": home, "kakao_key": (kakao_key or None),
-                       "mode": mode if mode in ("near", "all", "focus") else "near"},
+                       "mode": mode if mode in ("near", "all", "focus", "surplus") else "near",
+                       # 잉여 예보 지도: [[위도, 경도, 반지름(m), 이름표, 누르면 나오는 글], ...], 색 = 섬 전체 잉여 가능성
+                       "regions": regions or [], "region_color": region_color},
                       ensure_ascii=False).replace("</", "<\\/")
     return (_PAGE.replace("__LEAFLET_CSS__", LEAFLET_CSS).replace("__LEAFLET_JS__", LEAFLET_JS)
             .replace("__KAKAO_SDK__", KAKAO_SDK).replace("__HEIGHT__", str(int(height))).replace("__DATA__", data))

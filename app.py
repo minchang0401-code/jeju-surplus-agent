@@ -33,7 +33,14 @@ except Exception:   # Secrets 파일이 없는 PC 실행이면 .env 를 씀
 
 st.set_page_config(page_title="제주 잉여전력 도우미", page_icon="⚡", layout="wide", initial_sidebar_state="collapsed")
 st.markdown("""<style>
-.block-container { padding-top: 3.1rem; padding-bottom: .4rem; padding-left: 1.6rem; padding-right: 1.6rem; max-width: 100%; }
+/* 한 화면(스크롤 없이)에 맞추기: 지도 높이 = 화면 높이 - 나머지(머리말·카드·버튼·그래프) → 화면이 크면 지도도 커짐 */
+:root { --map-h: clamp(200px, calc(100vh - 410px), 640px); }
+.st-key-mapbox iframe { height: var(--map-h) !important; }
+.st-key-mapbox [data-testid="stDeckGlJsonChart"], .st-key-mapbox [data-testid="stDeckGlJsonChart"] > div { height: var(--map-h) !important; }
+[data-testid="stColumn"]:has(.days) [data-testid="stVerticalBlock"] { gap: .35rem; }
+[data-testid="stColumn"]:has(.days) [data-testid="stHorizontalBlock"] { align-items: center; }
+[data-testid="stColumn"]:has(.days) [data-testid="stVegaLiteChart"] { margin-top: -.3rem; }
+.block-container { padding-top: 2.7rem; padding-bottom: .2rem; padding-left: 1.6rem; padding-right: 1.6rem; max-width: 100%; }
 header[data-testid="stHeader"] { height: 2.4rem; background: rgba(255,255,255,.85); }
 /* 오른쪽 에너지 도우미: 스크롤해도 화면에 붙어 있고, 입력창은 화면 맨 아래 */
 [data-testid="stColumn"]:has(.st-key-sidepanel), [data-testid="column"]:has(.st-key-sidepanel) { align-self: stretch; }
@@ -52,16 +59,17 @@ h1 { font-size: 1.55rem !important; margin: 0 !important; padding: 0 !important;
         background:#eef2f0; color:#2d3b36; border:1px solid #dde4e0; }
 .pill.ok { background:#dff1e8; color:#0d6b44; border-color:#a9dcc2; }
 .pill.warn { background:#fff4dc; color:#8a5a00; border-color:#f2dcaa; }
-.days { display:flex; gap:8px; margin:.4rem 0 .5rem; }
-.day { flex:1; border-radius:12px; padding:7px 8px; text-align:center; color:#1b1b1b; border:1px solid rgba(0,0,0,.05); }
-.day .d { font-size:.82rem; color:#33413c; }
-.day .lv { font-size:1.15rem; font-weight:800; line-height:1.3; }
-.day .t { font-size:.74rem; color:#33413c; }
+.days { display:flex; gap:8px; margin:.15rem 0 0; }
+.day { flex:1; border-radius:10px; padding:4px 8px; text-align:center; color:#1b1b1b; border:1px solid rgba(0,0,0,.05); }
+.day .d { font-size:.76rem; color:#33413c; line-height:1.3; }
+.day .lv { font-size:1rem; font-weight:800; line-height:1.3; }
+.day .t { font-size:.7rem; color:#33413c; line-height:1.25; }
 .win { display:inline-block; margin:2px 6px 2px 0; padding:4px 10px; border-radius:999px; background:#dff1e8;
        color:#0d6b44; font-weight:700; font-size:.85rem; }
 .panel-title { font-weight:800; font-size:1.05rem; margin-bottom:.2rem; }
-.mapnote { background:#f6f8fb; border:1px solid #dfe6ef; border-radius:10px; padding:.4rem .7rem; margin:.1rem 0 .4rem;
-           font-size:.86rem; line-height:1.45; color:#1b1b1b; }
+.mapnote { background:#f6f8fb; border:1px solid #dfe6ef; border-radius:10px; padding:.3rem .6rem; margin:0;
+           font-size:.82rem; line-height:1.4; color:#1b1b1b; }
+.mapnote .why { color:#1f4f8f; cursor:help; border-bottom:1px dotted #1f4f8f; white-space:nowrap; }
 .mapnote .dot { display:inline-block; width:.8rem; height:.8rem; border-radius:50%; margin-right:.35rem; vertical-align:-1px;
                 border:1px solid #fff; box-shadow:0 0 0 1px #c9d2db; }
 .mapnote .mn-sub { color:#52514e; }
@@ -124,9 +132,25 @@ if fresh["status"] == "failed":
 if status["mode"].startswith("저장"):
     pills.append(f"<span class='pill warn'>{status['mode']}</span>")
 pills.append(f"<span class='pill {'ok' if _ls['on'] else ''}'>{'AI 연결' if _ls['on'] else 'AI 비상 모드'}</span>")
-st.markdown(f"<h1>⚡ 제주 잉여전력 도우미 {''.join(pills)}</h1>"
-            "<div class='sub'>제주 재생에너지가 남는 시간을 미리 알려 드려요. 그 시간에 전기를 쓰면 버려질 전기를 살릴 수 있어요. "
-            "(데이터 상태는 왼쪽 위 ▸ 메뉴)</div>", unsafe_allow_html=True)
+st.markdown(f"<h1 title='제주 재생에너지가 남는 시간을 미리 알려 드려요. 그 시간에 전기를 쓰면 버려질 전기를 살릴 수 있어요. "
+            f"(데이터 상태는 왼쪽 위 ▸ 메뉴)'>⚡ 제주 잉여전력 도우미 {''.join(pills)}</h1>", unsafe_allow_html=True)
+
+def _surplus_pydeck(reg, q, w, cur, sel, height):
+    """잉여 예보 지도 대체용(pydeck). HTML 지도를 못 그릴 때만 씀."""
+    reg = reg.copy()
+    reg["radius"] = 900 + reg["total_mw"].clip(lower=0) ** 0.5 * 430
+    reg["color"] = [prob_color(cur["prob"])] * len(reg)
+    reg["tip"] = [f"<b>{n}</b><br>태양광 {s_:.0f}MW · 풍력 {w_:.0f}MW<br>{sel} 잉여 가능성 {cur['pct']:.0f}% (섬 전체)"
+                  for n, s_, w_ in zip(reg["name"], reg["solar_mw"], reg["wind_mw"])]
+    q = q.assign(tip=[f"<b>{n}</b><br>급속 {int(a)}기" for n, a in zip(q["name"], q["quick_count"])])
+    layers = [pdk.Layer("ScatterplotLayer", reg, get_position="[lon, lat]", get_radius="radius", get_fill_color="color",
+                        get_line_color=[255, 255, 255], line_width_min_pixels=2, stroked=True, pickable=True),
+              pdk.Layer("ScatterplotLayer", q, get_position="[lon, lat]", get_radius=260, get_fill_color=[42, 120, 214, 170],
+                        pickable=True)]
+    st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=pdk.ViewState(latitude=33.37, longitude=126.56, zoom=9.3),
+                             tooltip={"html": "{tip}", "style": {"fontSize": "12px"}}, map_style=None),
+                    height=height, use_container_width=True)
+
 
 left, right = st.columns([0.79, 0.21], gap="small")
 
@@ -147,11 +171,7 @@ with left:
         hourly = None
 
     MODES = ["⚡ 잉여 예보 지도", "📍 내 주변 충전소", "🔌 충전소 전체"]
-    if hasattr(st, "segmented_control"):
-        mode = st.segmented_control("지도", MODES, default=MODES[0], label_visibility="collapsed") or MODES[0]
-    else:
-        mode = st.radio("지도", MODES, horizontal=True, label_visibility="collapsed")
-    MAP_H = 440
+    MAP_H = 440   # 기본값. 실제 높이는 CSS(--map-h)가 화면 높이에 맞춰 정함
     g, w = _nearby_data()
 
     if hourly is not None and len(hourly):
@@ -164,94 +184,78 @@ with left:
     else:
         wins, cur, sel = [], None, None
 
-    if mode == MODES[0] and cur is not None:
-        # ---- 잉여 예보 지도: 권역 원(크기 = 재생에너지 설비, 색 = 선택 시각 잉여 가능성) + 급속 충전소 + 풍력발전소
-        reg = _regions().copy()
-        # 제주는 전력망(계통)이 하나라 잉여(SMP 0원 이하)도 섬 전체에서 같은 시각에 생김 → 색은 섬 전체 예보 한 값.
-        # 지역별 예보로 오해하지 않도록 지도 위에 분명히 적음
-        _c = prob_color(cur["prob"])
-        st.markdown(
-            f"<div class='mapnote'><span class='dot' style='background:rgb({_c[0]},{_c[1]},{_c[2]})'></span>"
-            f"<b>{sel} · 섬 전체 잉여 가능성 {cur['pct']:.0f}% ({cur['level']})</b>"
-            "<span class='mn-sub'> — 제주는 전력망이 하나라 남는 전기도 섬 전체에서 같은 시각에 생겨요. "
-            "그래서 원 색은 모두 같고, <b>원 크기</b>가 권역별 재생에너지 설비(어디서 전기를 많이 만드는지)를 보여 줘요.</span></div>",
-            unsafe_allow_html=True)
-        reg["radius"] = 900 + reg["total_mw"].clip(lower=0) ** 0.5 * 430
-        reg["color"] = [prob_color(cur["prob"])] * len(reg)
-        reg["tip"] = [f"<b>{n}</b><br>태양광 {s_:.0f}MW · 풍력 {w_:.0f}MW<br>{sel} 잉여 가능성 {cur['pct']:.0f}% (섬 전체)"
-                      for n, s_, w_ in zip(reg["name"], reg["solar_mw"], reg["wind_mw"])]
-        reg["label"] = [f"{n}\n{t:.0f}MW" for n, t in zip(reg["name"], reg["total_mw"])]
-        q = g[g["quick"]].copy() if len(g) else pd.DataFrame(columns=["name", "lat", "lon", "quick_count", "slow_count"])
-        q["tip"] = [f"<b>{n}</b><br>급속 {int(a)}기 · 완속 {int(b)}기" for n, a, b in
-                    zip(q["name"], q["quick_count"], q["slow_count"])]
-        layers = [
-            pdk.Layer("ScatterplotLayer", reg, get_position="[lon, lat]", get_radius="radius", get_fill_color="color",
-                      get_line_color=[255, 255, 255], line_width_min_pixels=2, stroked=True, pickable=True),
-            pdk.Layer("ScatterplotLayer", q, get_position="[lon, lat]", get_radius=260, get_fill_color=[42, 120, 214, 170],
-                      pickable=True),
-            pdk.Layer("TextLayer", reg, get_position="[lon, lat]", get_text="label", get_size=13, get_color=[21, 33, 29],
-                      character_set="auto", font_family='"Noto Sans KR", "Malgun Gothic", sans-serif',
-                      font_weight=700, outline_width=3, outline_color=[255, 255, 255], font_settings={"sdf": True}),
-        ]
-        if w is not None and len(w):
-            wl = w.copy()
-            wl["tip"] = [f"<b>풍력 {s_}</b><br>{m}MW" for s_, m in zip(wl["설치장소"], wl["mw"])]
-            layers.insert(1, pdk.Layer("ScatterplotLayer", wl, get_position="[lon, lat]", get_radius="300 + mw * 18",
-                                       get_fill_color=[235, 104, 52, 200], get_line_color=[255, 255, 255],
-                                       line_width_min_pixels=1, stroked=True, pickable=True))
-        st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=pdk.ViewState(latitude=33.37, longitude=126.56, zoom=9.3),
-                                 tooltip={"html": "{tip}", "style": {"fontSize": "12px"}}, map_style=None),
-                        height=MAP_H, use_container_width=True)
-        st.markdown("<div class='legend-row'>● 권역 원 크기 = 재생에너지 설비용량(허브 123 태양광 + 풍력발전현황), "
-                    "색 = 선택 시각의 잉여 가능성(섬 전체 예보) · <span style='color:#2a78d6'>●</span> 급속 충전소(허브 862) · "
-                    "<span style='color:#eb6834'>●</span> 풍력발전소(위치는 리 단위 대략값)</div>", unsafe_allow_html=True)
-    elif mode == MODES[1]:
-        # ---- 내 주변 충전소: GPS(브라우저 안에서만) → 저장한 동네 → 카카오맵 길찾기
-        home = None
-        if profile.get("area") in PLACE_COORDS:
-            lat, lon = PLACE_COORDS[profile["area"]]
-            home = {"name": profile["area"], "lat": lat, "lon": lon}
-        if len(g):
-            try:   # 카카오맵(KAKAO_JS_KEY 가 있을 때) → OpenStreetMap
-                components.html(nearby_map_html(g, w, home, height=MAP_H - 40, kakao_key=_kakao_key()),
-                                height=MAP_H + 40, scrolling=True)
-            except Exception:   # HTML 지도를 못 그려도 목록과 길찾기는 보여 줌
-                if home:
-                    from tools import find_chargers
-                    near = find_chargers(home["name"], limit=5)["chargers"]
-                    st.markdown("**내 동네(" + home["name"] + ") 가까운 충전소**\n" + "\n".join(
-                        f"- {c['name']} ({c.get('distance_km', 0):.1f}km) — [여기까지 길찾기]({c['route_link']})" for c in near))
-                else:
-                    st.info("'👤 내 정보'에 동네를 저장하면 가까운 충전소와 길찾기를 보여 드려요.")
-            st.markdown("<div class='legend-row'>📍 위치는 이 화면(브라우저) 안에서만 쓰고 서버로 보내거나 저장하지 않아요. "
-                        "위치를 허용하지 않으면 '👤 내 정보'(오른쪽 에너지 도우미 맨 위)에 저장한 동네 기준으로 보여 드려요.</div>",
-                        unsafe_allow_html=True)
+    # 지도 고르는 버튼과 지도 설명을 한 줄에 (세로 공간 절약)
+    c_mode, c_note = st.columns([0.42, 0.58], gap="small")
+    with c_mode:
+        if hasattr(st, "segmented_control"):
+            mode = st.segmented_control("지도", MODES, default=MODES[0], label_visibility="collapsed") or MODES[0]
         else:
-            st.info("충전소 데이터(허브 862)가 없어 내 주변 지도를 그릴 수 없어요.")
-    else:
-        # ---- 충전소 전체: '내 주변'과 같은 지도(카카오맵 → OpenStreetMap), 실패하면 pydeck
-        try:
-            components.html(nearby_map_html(g, w, None, height=MAP_H - 20, kakao_key=_kakao_key(), mode="all"),
-                            height=MAP_H + 10)
-        except Exception:
-            quick_only = st.toggle("급속 충전소만 보기", value=False)
-            pts = g[g["quick"]] if (quick_only and len(g)) else g
-            pts = pts.assign(color=[[42, 120, 214, 190] if v else [154, 154, 150, 150] for v in pts["quick"]],
-                             tip=[f"<b>{n}</b><br>급속 {int(a)}기 · 완속 {int(b)}기" for n, a, b in
-                                  zip(pts["name"], pts["quick_count"], pts["slow_count"])])
-            layers = [pdk.Layer("ScatterplotLayer", pts, get_position="[lon, lat]", get_radius=230, get_fill_color="color", pickable=True)]
-            if w is not None and len(w):
-                wl = w.assign(tip=[f"<b>풍력 {s_}</b><br>{m}MW" for s_, m in zip(w["설치장소"], w["mw"])])
-                layers.append(pdk.Layer("ScatterplotLayer", wl, get_position="[lon, lat]", get_radius="300 + mw * 18",
-                                        get_fill_color=[235, 104, 52, 200], get_line_color=[255, 255, 255],
-                                        line_width_min_pixels=1, stroked=True, pickable=True))
-            st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=pdk.ViewState(latitude=33.37, longitude=126.56, zoom=9.3),
-                                     tooltip={"html": "{tip}", "style": {"fontSize": "12px"}}, map_style=None),
-                            height=MAP_H - 40, use_container_width=True)
-        n_q = int(g["quick"].sum()) if len(g) else 0
-        st.markdown(f"<div class='legend-row'><span style='color:#2a78d6'>●</span> 급속 충전소 {n_q:,}곳 · "
-                    f"<span style='color:#9a9a96'>●</span> 완속만 {len(g) - n_q:,}곳 · <span style='color:#eb6834'>●</span> 풍력발전소 "
-                    "· 출처: 제주데이터허브 862, 제주특별자치도 풍력발전현황(허브 472)</div>", unsafe_allow_html=True)
+            mode = st.radio("지도", MODES, horizontal=True, label_visibility="collapsed")
+    with c_note:
+        if mode == MODES[0] and cur is not None:
+            # 제주는 전력망(계통)이 하나라 잉여(SMP 0원 이하)도 섬 전체에서 같은 시각에 생김 → 색은 섬 전체 예보 한 값
+            _c = prob_color(cur["prob"])
+            st.markdown(
+                f"<div class='mapnote'><span class='dot' style='background:rgb({_c[0]},{_c[1]},{_c[2]})'></span>"
+                f"<b>{sel} · 섬 전체 잉여 가능성 {cur['pct']:.0f}% ({cur['level']})</b> "
+                "<span class='why' title='제주는 전력망이 하나라 남는 전기도 섬 전체에서 같은 시각에 생겨요. 그래서 원 색은 모두 같고, "
+                "원 크기가 권역별 재생에너지 설비(어디서 전기를 많이 만드는지)를 보여 줘요. 아래 슬라이더로 시각을 바꾸면 색이 바뀌어요.'>"
+                "ⓘ 왜 색이 다 같나요?</span></div>", unsafe_allow_html=True)
+        elif mode == MODES[1]:
+            st.markdown("<div class='mapnote'>📍 위치는 이 화면(브라우저) 안에서만 쓰고 저장하지 않아요. "
+                        "허용하지 않거나 제주 밖이면 '👤 내 정보'의 동네로 보여 드려요.</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='mapnote'>🔌 제주 공용 충전소 전체와 풍력발전소 · 점을 누르면 이름과 길찾기</div>",
+                        unsafe_allow_html=True)
+
+    with st.container(key="mapbox"):
+        if mode == MODES[0] and cur is not None:
+            # ---- 잉여 예보 지도: 권역 원(크기 = 재생에너지 설비, 색 = 선택 시각 잉여 가능성) + 급속 충전소 + 풍력발전소
+            reg = _regions().copy()
+            _c = prob_color(cur["prob"])
+            regions = [[float(r.lat), float(r.lon), float(900 + max(r.total_mw, 0) ** 0.5 * 430),
+                        f"{r.name}\n{r.total_mw:.0f}MW",
+                        f"{r.name} · 태양광 {r.solar_mw:.0f}MW · 풍력 {r.wind_mw:.0f}MW · {sel} 잉여 가능성 {cur['pct']:.0f}% (섬 전체)"]
+                       for r in reg.itertuples()]
+            q = g[g["quick"]] if len(g) else g
+            try:   # 다른 지도와 같은 카카오맵(→ OpenStreetMap)
+                components.html(nearby_map_html(q, w, None, height=MAP_H, kakao_key=_kakao_key(), mode="surplus",
+                                                regions=regions, region_color=f"rgb({_c[0]},{_c[1]},{_c[2]})"),
+                                height=MAP_H)
+            except Exception:   # HTML 지도를 못 그리면 pydeck 지도로
+                _surplus_pydeck(reg, q, w, cur, sel, MAP_H)
+        elif mode == MODES[1]:
+            # ---- 내 주변 충전소: GPS(브라우저 안에서만) → 저장한 동네 → 카카오맵 길찾기
+            home = None
+            if profile.get("area") in PLACE_COORDS:
+                lat, lon = PLACE_COORDS[profile["area"]]
+                home = {"name": profile["area"], "lat": lat, "lon": lon}
+            if len(g):
+                try:   # 카카오맵(KAKAO_JS_KEY 가 있을 때) → OpenStreetMap. 목록은 지도 오른쪽
+                    components.html(nearby_map_html(g, w, home, height=MAP_H, kakao_key=_kakao_key()), height=MAP_H)
+                except Exception:   # HTML 지도를 못 그려도 목록과 길찾기는 보여 줌
+                    if home:
+                        from tools import find_chargers
+                        near = find_chargers(home["name"], limit=5)["chargers"]
+                        st.markdown("**내 동네(" + home["name"] + ") 가까운 충전소**\n" + "\n".join(
+                            f"- {c['name']} ({c.get('distance_km', 0):.1f}km) — [여기까지 길찾기]({c['route_link']})" for c in near))
+                    else:
+                        st.info("'👤 내 정보'에 동네를 저장하면 가까운 충전소와 길찾기를 보여 드려요.")
+            else:
+                st.info("충전소 데이터(허브 862)가 없어 내 주변 지도를 그릴 수 없어요.")
+        else:
+            # ---- 충전소 전체: 같은 지도(카카오맵 → OpenStreetMap), 실패하면 pydeck
+            try:
+                components.html(nearby_map_html(g, w, None, height=MAP_H, kakao_key=_kakao_key(), mode="all"), height=MAP_H)
+            except Exception:
+                pts = g.assign(color=[[42, 120, 214, 190] if v else [154, 154, 150, 150] for v in g["quick"]],
+                               tip=[f"<b>{n}</b><br>급속 {int(a)}기 · 완속 {int(b)}기" for n, a, b in
+                                    zip(g["name"], g["quick_count"], g["slow_count"])])
+                st.pydeck_chart(pdk.Deck(layers=[pdk.Layer("ScatterplotLayer", pts, get_position="[lon, lat]", get_radius=230,
+                                                           get_fill_color="color", pickable=True)],
+                                         initial_view_state=pdk.ViewState(latitude=33.37, longitude=126.56, zoom=9.3),
+                                         tooltip={"html": "{tip}", "style": {"fontSize": "12px"}}, map_style=None),
+                                height=MAP_H, use_container_width=True)
 
     if cur is not None:
         # ---- 시각 선택 + 그래프: 시간별 잉여 가능성
@@ -273,14 +277,14 @@ with left:
         now_rule = alt.Chart(pd.DataFrame({"ts": [cur["ts"]]})).mark_rule(color="#15211d", strokeWidth=2).encode(x="ts:T")
         win_df = pd.DataFrame([{"s": v["start"], "e": v["end"]} for v in wins]) if wins else pd.DataFrame(columns=["s", "e"])
         win_rect = alt.Chart(win_df).mark_rect(color="#3fb37c", opacity=0.13).encode(x="s:T", x2="e:T")
-        st.altair_chart((bg + win_rect + bars + rules + now_rule).properties(height=170), use_container_width=True)
+        st.altair_chart((bg + win_rect + bars + rules + now_rule).properties(height=92), use_container_width=True)
+        _src = "출처: " + ", ".join(fc["sources"]) + " · " + fc["note"]
         if wins:
             st.markdown("**추천 시간대(3시간)** " + "".join(f"<span class='win'>{v['text']} · {v['prob']:.0%}</span>" for v in wins)
-                        + f"<span class='legend-row'> · 위 슬라이더로 시각을 고르면 지도 색이 바뀌어요. {fc['note']}</span>",
-                        unsafe_allow_html=True)
+                        + f"<span class='legend-row' title='{_src}'> · ⓘ 출처·안내</span>", unsafe_allow_html=True)
         else:
-            st.caption("앞으로 며칠은 재생에너지가 남을 가능성이 20%를 넘는 시간이 없어요. " + fc["note"])
-        st.caption("출처: " + ", ".join(fc["sources"]))
+            st.markdown("<span class='legend-row'>앞으로 며칠은 재생에너지가 남을 가능성이 20%를 넘는 시간이 없어요. "
+                        f"</span><span class='legend-row' title='{_src}'>ⓘ 출처·안내</span>", unsafe_allow_html=True)
 
 
 # ================================================================ 오른쪽: 에이전트 대화 패널
