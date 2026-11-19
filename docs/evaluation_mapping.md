@@ -19,7 +19,7 @@
 |---|---|---|
 | 기획서 PDF (15쪽 이내) | 별도 제출 | 팀 작성 — 결과 설명자료와 숫자 일치 확인 필요 |
 | 실행 소스 (Prompt, Tool/API, 모델·라이브러리) | `agent.py`(지침), `tools.py`(도구 명세), `appliances.py`, `grid.py`, `predict.py`, `train.py`, `requirements.txt` | ✅ |
-| 실행환경·매뉴얼 | `README.md`, `docs/manual.md`, `.env.example`, `실행하기.command`/`실행하기.bat` | ✅ |
+| 실행환경·매뉴얼 | `README.md`, `docs/judge_quickstart.md`(심사위원용 3분 안내), `docs/manual.md`, `.env.example`, `실행하기.command`/`실행하기.bat` | ✅ |
 | 데이터 활용 명세 | `docs/data_spec.md`, `docs/ai_disclosure.md` 4장 | ✅ |
 | 결과 설명자료 | `docs/result_report.md` (+ PDF) | ✅ |
 | AI 모델·AI 활용 범위·외부 API·오픈소스 고지 | `docs/ai_disclosure.md` | ✅ |
