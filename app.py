@@ -20,7 +20,7 @@ import streamlit.components.v1 as components
 
 # 클라우드(Streamlit Community Cloud)에서는 키를 .env 대신 앱 설정의 Secrets 에 넣음 → 환경변수로 옮김
 try:
-    for _k in ("DATA_GO_KR_KEY", "KMA_APIHUB_KEY", "LLM_PROVIDER", "LLM_API_KEY", "LLM_MODEL"):
+    for _k in ("DATA_GO_KR_KEY", "KMA_APIHUB_KEY", "LLM_PROVIDER", "LLM_API_KEY", "LLM_MODEL", "KAKAO_JS_KEY"):
         if _k in st.secrets and not os.environ.get(_k):
             os.environ[_k] = str(st.secrets[_k])
 except Exception:   # Secrets 파일이 없는 PC 실행이면 .env 를 씀
@@ -113,7 +113,8 @@ with st.expander("🗺️ 지도로 보기 — 내 주변 충전소와 풍력발
             home = {"name": profile["area"], "lat": lat, "lon": lon}
         if len(g):
             try:
-                components.html(nearby_map_html(g, w, home), height=760, scrolling=True)
+                from config import get_key
+                components.html(nearby_map_html(g, w, home, kakao_key=get_key("KAKAO_JS_KEY")), height=780, scrolling=True)
             except Exception:   # Streamlit 버전이 바뀌어 HTML 지도를 못 그려도 목록과 길찾기는 보여 줌
                 if home:
                     from tools import find_chargers

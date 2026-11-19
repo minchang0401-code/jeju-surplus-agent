@@ -64,6 +64,7 @@
 | pytest | 자동 시험 (`tests/`, 선택) | MIT |
 | 지도 배경 (Streamlit `st.map`) | 화면 지도 | 배경 지도 © OpenStreetMap contributors, © CARTO (화면에 표시됨) |
 | 카카오맵 링크 | 충전소 위치 열기·현재 위치에서 길찾기 (링크만 만듦, API 호출 없음) | 카카오맵 이용약관에 따름 |
+| 카카오맵 JavaScript API (선택) | 내 주변 충전소 지도 배경 (`KAKAO_JS_KEY`가 있을 때만, 사용자 브라우저에서 불러옴) | 카카오 개발자 이용약관 · 키는 Secrets/.env에만 두고 제출물에 넣지 않음 |
 | Leaflet 1.9.4 (unpkg CDN) | 내 주변 충전소 지도 (사용자 브라우저에서 불러옴) | BSD-2-Clause |
 | 배경 지도 타일 (내 주변 지도) | OpenStreetMap 타일, 못 받으면 Esri World Street Map으로 자동 전환 | © OpenStreetMap contributors (ODbL), Tiles © Esri — 화면에 표시 |
 | 브라우저 위치(Geolocation) | 내 주변 충전소 (사용자가 허용할 때만, 브라우저 안에서만 계산·저장 안 함) | 웹 표준 API |

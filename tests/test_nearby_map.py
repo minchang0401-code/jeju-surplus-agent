@@ -44,3 +44,12 @@ def test_javascript_syntax(tmp_path):
     f = tmp_path / "m.js"
     f.write_text(js, encoding="utf-8")
     assert subprocess.run(["node", "--check", str(f)], capture_output=True).returncode == 0
+
+
+def test_kakao_only_with_key_and_falls_back():
+    g = tools.charger_places().head(50)
+    with_key = nearby_map_html(g, None, None, kakao_key="TEST")
+    no_key = nearby_map_html(g, None, None)
+    assert '"kakao_key": "TEST"' in with_key and '"kakao_key": null' in no_key
+    assert "dapi.kakao.com/v2/maps/sdk.js" in with_key
+    assert "makeLeaflet()" in with_key                       # 카카오맵 실패 시 OpenStreetMap

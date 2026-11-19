@@ -50,6 +50,7 @@ LLM_MODEL=                  # 비우면 gemini-3.5-flash-lite
 | **Gemini API 키** (`LLM_API_KEY`) | https://aistudio.google.com 에 구글 계정으로 로그인 → 왼쪽 아래 열쇠 아이콘(API keys) → **API 키 만들기** → 복사. 결제 등록 없이 무료 등급(하루 500회) | 1분 |
 | 공공데이터포털 일반 인증키 (`DATA_GO_KR_KEY`) | https://www.data.go.kr 회원가입 → 「기상청_단기예보 조회서비스」(15084084) **활용신청** → 마이페이지 → 개인 API 인증키에서 **인증키 복사(Decoding)** | 승인 즉시~1시간 |
 | 기상청 API허브 인증키 (`KMA_APIHUB_KEY`) | https://apihub.kma.go.kr 회원가입 → 지상관측 **ASOS 시간자료** 활용신청 → 마이페이지에서 인증키 복사 | 승인 즉시 |
+| (선택) 카카오맵 JavaScript 키 (`KAKAO_JS_KEY`) | https://developers.kakao.com → 내 애플리케이션 → 애플리케이션 추가 → **앱 키의 JavaScript 키** 복사 → 플랫폼 → **Web 사이트 도메인**에 앱 주소(예: `http://localhost:8501`, 배포 주소) 등록 → 카카오맵 사용 설정 켜기. 없으면 '내 주변' 지도가 OpenStreetMap으로 나옴 | 10분 |
 | 제주데이터허브 프로젝트키 (`JEJU_DATAHUB_PROJECT_KEY`) | https://jejudatahub.net 회원가입 → 프로젝트 만들기 → 데이터 579·862·1225·1226을 프로젝트에 추가 → 프로젝트키 복사 | 즉시 |
 
 - 키는 다른 사람에게 보여 주거나 캡처·업로드하지 마세요. 노출되면 발급처에서 새로 만들고 예전 키는 지웁니다.
@@ -76,7 +77,7 @@ pip install -r requirements.txt
 | 5 | `python train.py` | `models/`, `reports/report.md`, `reports/metrics.json` | 1분 이내 |
 | 6 | `python collect_weather.py forecast` | `data/forecast_jeju_hourly.csv` (최신 단기예보) | 수 초 |
 | 7 | `python run_scenarios.py` | `reports/scenario_results.md` (시나리오 5개 + 질문 58개 + 이어지는 질문 8개 + 생활 언어 답변 10개) | 수 초 |
-| 7-1 | `pip install -r requirements-dev.txt` 후 `python -m pytest` | 자동 시험 123개 통과 여부 (키·인터넷 필요 없음) | 수 초 |
+| 7-1 | `pip install -r requirements-dev.txt` 후 `python -m pytest` | 자동 시험 124개 통과 여부 (키·인터넷 필요 없음) | 수 초 |
 | 8 | `python -m streamlit run app.py` | 브라우저에 화면 (http://localhost:8501) | — |
 
 - 1~5는 이미 결과가 들어 있으니 건너뛰어도 됩니다.
