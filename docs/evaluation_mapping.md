@@ -11,7 +11,7 @@
 | **필수 제주 데이터 활용 (20)** | 제주데이터허브 **7종**을 실제로 받아 씁니다: 579(일별 기상 → 학습 변수), 862(충전소 → 동네 충전소 찾기·지도), 1225·1226(충전 이력 → 대기·관광객 비중, 도민 충전 시각), 877(기후 → 일사·바람 설명), 123·472(태양광·풍력 설비 → 설비 증가 설명, 화면의 권역별 설비용량 지도). 외부 데이터(EPSIS SMP 정답, 기상청, 한국전력거래소 계통 기록)와 **같은 시각 기준으로 연결**했습니다. | `docs/data_spec.md` 1~3장, 화면 사이드바 '데이터 상태', 답변의 '근거 보기' 출처 줄 |
 | **AI Agent 기술성·완성도 (25)** | Gemini 3.5 Flash-Lite가 **도구 11개**를 함수 호출로 골라 부르고, 도구 결과로만 답합니다. 질문마다 오늘 날짜·이번 주·예보 범위를 지침에 새로 넣고, 이어지는 대화(최근 3번)를 이해합니다. 오류·한도 초과 때는 다시 시도한 뒤 **규칙 기반 모드로 자동 전환**합니다. 예측은 HistGradientBoosting으로 하고, 날짜 PR-AUC 0.651은 무작위 0.165의 약 4배입니다. | `agent.py`(지침 `_system_prompt`, `_chat_openai`, `_post_retry`), `tools.py`(`TOOL_SPECS`), `reports/metrics.json`, `reports/llm_eval.md` |
 | **편의성·실용성 (25)** | 생활 언어 이해: 기기 사전 16종(공인·제조사 자료)으로 걸리는 시간·전력량을 계산합니다. 원하는 시간에 남는 전기가 없으면 솔직히 말하고 더 나은 때와 예약 기능을 권합니다. 전기차는 배터리 %만, 보일러는 연료 종류만 묻습니다. 출근 일정을 반영하고(팀원 C 방식), 한 화면 대시보드(왼쪽 5일 예보 카드·**시간별 잉여 가능성 그래프와 시각 슬라이더**·지도 3종, 오른쪽 대화), **잉여 예보 지도**(권역별 설비용량 × 고른 시각의 가능성), **충전소·풍력발전소 지도**(팀원 B 방식)와 충전소별 카카오맵 위치·길찾기 링크, **내 정보 저장**(동네·차종·출퇴근을 한 번만 입력), **캘린더 알림**(추천 시간대를 일정으로 저장, 10분 전 알림), **내 주변 충전소**(카카오맵, GPS는 브라우저 안에서만, 제주 밖·실패하면 빨간 안내와 저장한 동네, 카카오맵 길찾기), 근거 보기(표·그래프·지도)를 갖췄습니다. 시간을 "낮 12시~오후 2시"처럼 말합니다. | 웹 화면(팀 시연 주소), `appliances.py`, `docs/manual.md`, `docs/result_report.md` 4장 |
-| **신뢰성·재현성 (15)** | 학습에 쓰지 않은 기간(2026.1.1~11.17)으로 평가하고, 단순 규칙·과거 비율 기준선과 비교했습니다. 정답(SMP 0원 이하) 시간이 실제 출력제어 시간과 겹침을 따로 확인했습니다(그림 6). **pytest 자동 시험 129개**(팀원 C 방식, 키·인터넷 없이 `python -m pytest`)와 Gemini 27문항 시험이 있습니다. 답에는 출처를 붙이고, 예보 범위(5일) 밖·지난 날짜는 예보하지 않습니다. 한계를 따로 밝혔습니다. | `tests/`(`python -m pytest`), `run_scenarios.py` → `reports/scenario_results.md`, `run_llm_eval.py` → `reports/llm_eval.md`, `docs/result_report.md` 5·6·8장, `requirements-tested.txt` |
+| **신뢰성·재현성 (15)** | 학습에 쓰지 않은 기간(2026.1.1~11.17)으로 평가하고, 단순 규칙·과거 비율 기준선과 비교했습니다. 정답(SMP 0원 이하) 시간이 실제 출력제어 시간과 겹침을 따로 확인했습니다(그림 6). **pytest 자동 시험 129개**(팀원 C 방식, 키·인터넷 없이 `python -m pytest`)와 Gemini 27문항 시험(**27/27 통과**, 2026-11-19)이 있습니다. 답에는 출처를 붙이고, 예보 범위(5일) 밖·지난 날짜는 예보하지 않습니다. 한계를 따로 밝혔습니다. | `tests/`(`python -m pytest`), `run_scenarios.py` → `reports/scenario_results.md`, `run_llm_eval.py` → `reports/llm_eval.md`, `docs/result_report.md` 5·6·8장, `requirements-tested.txt` |
 
 ## 2. 제출물 점검표
 
@@ -21,7 +21,7 @@
 | 실행 소스 (Prompt, Tool/API, 모델·라이브러리) | `agent.py`(지침), `tools.py`(도구 명세), `appliances.py`, `grid.py`, `predict.py`, `train.py`, `requirements.txt` | ✅ |
 | 실행환경·매뉴얼 | `README.md`, `docs/manual.md`, `.env.example`, `실행하기.command`/`실행하기.bat` | ✅ |
 | 데이터 활용 명세 | `docs/data_spec.md`, `docs/ai_disclosure.md` 4장 | ✅ |
-| 결과 설명자료 | `docs/result_report.md` (+ PDF) | ✅ (Gemini 시험 최종 결과는 재실행 후 반영) |
+| 결과 설명자료 | `docs/result_report.md` (+ PDF) | ✅ |
 | AI 모델·AI 활용 범위·외부 API·오픈소스 고지 | `docs/ai_disclosure.md` | ✅ |
 | 키 미포함 | `.env`, Secrets 제외. 평가용 LLM 키만 사용량 제한을 걸어 별도 안내 | 제출 전 최종 검사 |
 
