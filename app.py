@@ -66,7 +66,7 @@ st.markdown(f"""<style>:root {{
 }}</style>""", unsafe_allow_html=True)
 st.markdown("""<style>
 /* 한 화면(스크롤 없이)에 맞추기: 지도 높이 = 화면 높이 - 나머지(머리말·카드·버튼·그래프) → 화면이 크면 지도도 커짐 */
-:root { --map-h: clamp(200px, calc(100vh - 436px), 620px); }
+:root { --map-h: clamp(200px, calc(100vh - 452px), 620px); }
 /* 지도 칸 자체의 높이를 정하고(넘치면 잘라서 아래 글과 겹치지 않게) 안의 지도는 그 칸을 꽉 채움 */
 .st-key-mapbox { height: var(--map-h) !important; min-height: var(--map-h); overflow: hidden; flex: 0 0 auto !important; }
 .st-key-mapboxfull { height: calc(var(--map-h) + 54px) !important; min-height: calc(var(--map-h) + 54px); overflow: hidden; flex: 0 0 auto !important; }
@@ -122,6 +122,15 @@ h1 { font-size: 1.55rem !important; margin: 0 !important; padding: 0 !important;
 .mapnote .mn-sub { color:var(--ink2); }
 .legend-row { font-size:.78rem; color:var(--ink2); }
 div[data-testid="stChatMessage"] { padding: .4rem .5rem; }
+/* 시간대별 그래프 카드: 제목 줄에 고른 시각·추천 후보를 모아 한눈에 (팀원 시안) */
+.st-key-graphcard { border: 1px solid var(--panel-border); border-radius: 12px; padding: .35rem .7rem .05rem; gap: .1rem; }
+.ghead { display:flex; align-items:center; gap:8px; white-space:nowrap; overflow:hidden; font-size:.82rem; color:var(--ink); }
+.ghead .gt { font-weight:800; font-size:.95rem; }
+.ghead .sep { color:var(--ink2); opacity:.6; }
+.ghead .lbl { color:var(--ink2); font-weight:600; }
+.ghead .chip { display:inline-block; padding:3px 10px; border-radius:999px; background:var(--ok); color:var(--ok-ink); font-weight:700; }
+.ghead .chip.sel { background:var(--panel); color:var(--ink); border:1px solid var(--panel-border); }
+.ghead .info { color:var(--ink2); cursor:help; margin-left:auto; padding-left:6px; }
 /* 휴대폰(좁은 화면): 날짜 카드 5개가 한 줄에 들어가도록 글자를 줄이고 줄바꿈을 막음 */
 @media (max-width: 640px) {
   .days { gap: 4px; }
@@ -204,7 +213,8 @@ def _hourly_chart(hourly, cur, wins, height: int) -> bool:
     """시간별 잉여 가능성 막대그래프 (밤은 회색 배경, 추천 3시간은 초록 띠, 고른 시각은 검은 선).
     그래프 아무 데나 누르면 그 시각이 골라짐(검은 선이 옮겨 가고 지도 색이 바뀜). 누르기를 못 쓰는 옛 Streamlit 이면 False."""
     night = night_bands(hourly)
-    x = alt.X("ts:T", title=None, axis=alt.Axis(format="%m/%d %H시", labelAngle=0, tickCount="day", grid=False))
+    x = alt.X("ts:T", title=None, axis=alt.Axis(labelAngle=0, tickCount="day", grid=False, labelExpr=(
+        "timeFormat(datum.value, '%-m/%-d') + ' (' + ['일','월','화','수','목','금','토'][day(datum.value)] + ')'")))
     y = alt.Y("prob:Q", title=None, scale=alt.Scale(domain=[0, max(0.6, float(hourly["prob"].max()) + .05)]),
               axis=alt.Axis(format="%"))
     bg = alt.Chart(night).mark_rect(color=NIGHT).encode(x="s:T", x2="e:T")
@@ -360,25 +370,27 @@ with left:
                                 height=MAP_H, use_container_width=True)
 
     if with_slider:   # 시각 고르기: 그래프를 누르면 검은 선이 옮겨 가고 잉여 예보 지도 색이 바뀜
-        if not _hourly_chart(hourly, cur, wins, 150):   # 옛 Streamlit 이면 슬라이더로 대신
-            _p = dict(zip(hourly["label"], zip(hourly["pct"], hourly["level"])))
-            st.select_slider("지도·그래프 시각", options=hourly["label"].tolist(), value=sel, key="sel_time",
-                             label_visibility="collapsed",
-                             format_func=lambda l: f"{l} · 전기가 남을 가능성 {_p[l][0]:.0f}% ({_p[l][1]})")
-    if cur is not None:
         _src = "출처: " + ", ".join(fc["sources"]) + " · " + fc["note"]
         if wins:
-            _html("<div class='reco'><b>추천 시간대(3시간)</b> " + "".join(f"<span class='win'>{v['text']} · {v['prob']:.0%}</span>" for v in wins)
-                  + f"<span class='legend-row' title='{_src}'> · 그래프를 누르거나 끌면 그 시각으로 지도가 바뀌어요 ⓘ 출처·안내</span></div>")
-        else:
-            # 3시간 연속으로는 20%를 못 넘어도, 한 시간이라도 넘는 때가 있으면 그 시간을 알려 줌 (카드·그래프와 어긋나지 않게)
-            one = best_windows(hourly, hours=1, top=3)
-            if one:
-                _html("<div class='reco'><b>가능성 있는 시간(짧음)</b> " + "".join(f"<span class='win'>{v['text']} · {v['prob']:.0%}</span>" for v in one)
-                      + f"<span class='legend-row' title='{_src}'> · 3시간 이어지는 때는 없어요 · 그래프를 누르거나 끌면 그 시각으로 지도가 바뀌어요 ⓘ 출처·안내</span></div>")
-            else:
-                _html("<div class='reco'><span class='legend-row'>앞으로 며칠은 재생에너지가 남을 가능성이 20%를 넘는 시간이 없어요.</span>"
-                      f"<span class='legend-row' title='{_src}'> · 그래프를 누르거나 끌면 그 시각으로 지도가 바뀌어요 ⓘ 출처·안내</span></div>")
+            cand_lbl, cand = "추천 시간대(3시간)", wins
+        else:   # 3시간 연속으로는 20%를 못 넘어도, 한 시간이라도 넘는 때가 있으면 그 시간 (카드·그래프와 어긋나지 않게)
+            cand_lbl, cand = "가능성 있는 시간", best_windows(hourly, hours=1, top=3)
+        chips = ("".join(f"<span class='chip'>{v['text']} · {v['prob']:.0%}</span>" for v in cand) if cand
+                 else "<span class='lbl'>앞으로 며칠은 가능성이 20%를 넘는 시간이 없어요</span>")
+        try:
+            gbox = st.container(key="graphcard")
+        except TypeError:   # 아주 옛날 Streamlit
+            gbox = st.container()
+        with gbox:
+            _html("<div class='ghead'><span class='gt'>📊 시간대별 잉여전력 예보</span><span class='sep'>|</span>"
+                  f"<span class='chip sel'>선택 {sel} · 남을 가능성 {cur['pct']:.0f}% ({cur['level']})</span>"
+                  f"<span class='sep'>|</span><span class='lbl'>{cand_lbl}</span>{chips}"
+                  f"<span class='info' title='{_src} · 그래프를 누르거나 끌면 그 시각으로 지도가 바뀌어요'>ⓘ 출처·안내</span></div>")
+            if not _hourly_chart(hourly, cur, wins, 150):   # 옛 Streamlit 이면 슬라이더로 대신
+                _p = dict(zip(hourly["label"], zip(hourly["pct"], hourly["level"])))
+                st.select_slider("지도·그래프 시각", options=hourly["label"].tolist(), value=sel, key="sel_time",
+                                 label_visibility="collapsed",
+                                 format_func=lambda l: f"{l} · 전기가 남을 가능성 {_p[l][0]:.0f}% ({_p[l][1]})")
 
 
 # ================================================================ 오른쪽: 에이전트 대화 패널
