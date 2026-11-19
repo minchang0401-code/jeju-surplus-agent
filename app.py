@@ -277,7 +277,22 @@ def _chatbox():
         return st.container(height=520, border=True)
 
 
+def _hub_badge(res: dict) -> str:
+    """이 답에 실제로 쓰인 제주데이터허브 데이터 번호 (도구 결과의 출처에서 모음)."""
+    import re
+    nums = []
+    for t in res.get("trace", []):
+        for src in (t.get("result") or {}).get("sources", []) if isinstance(t.get("result"), dict) else []:
+            for n in re.findall(r"(?:제주데이터허브|허브)\s*(\d{3,4})", str(src)):
+                if n not in nums:
+                    nums.append(n)
+    return ("🏝️ 이 답에 쓰인 제주데이터허브: " + " · ".join(nums)) if nums else ""
+
+
 def _render_evidence(res: dict) -> None:
+    badge = _hub_badge(res)
+    if badge:
+        st.caption(badge)
     with st.expander("근거 보기 (사용한 도구와 데이터)"):
         st.caption("응답 방식: " + ("AI(LLM)" if res["mode"] == "llm" else "규칙 기반(비상 모드)"))
         for t in res["trace"]:
@@ -304,11 +319,18 @@ def _render_evidence(res: dict) -> None:
                         mp = cdf[["lat", "lon"]].assign(
                             color=cdf["has_quick"].map({True: "#2a78d6", False: "#9a9a96"}), size=40.0)
                         st.map(mp, latitude="lat", longitude="lon", color="color", size="size", zoom=13)
-                show = cdf.drop(columns=[c for c in ("lat", "lon", "has_quick") if c in cdf.columns]).rename(
+                if "midday_use" in cdf.columns:   # 허브 1226: 낮(10~15시) 이용 정도
+                    cdf["낮 이용(허브 1226)"] = cdf["midday_use"].map(lambda m: m.get("level") if isinstance(m, dict) else "기록 없음")
+                if r.get("ranking"):
+                    st.caption("순서: " + r["ranking"])
+                for m in r.get("moved_back", []):
+                    st.caption(f"↘ {m['name']}({m['distance_km']:.1f}km)는 더 가깝지만 {m['why']}이 있어 뒤로 뺐어요.")
+                drop = ("lat", "lon", "has_quick", "midday_use", "crowding_2022", "reason")
+                show = cdf.drop(columns=[c for c in drop if c in cdf.columns]).rename(
                     columns={"name": "충전소", "quick_count": "급속", "slow_count": "완속", "distance_km": "거리(km)",
                              "map_link": "위치", "route_link": "길찾기"})
                 # 좁은 화면에서도 거리·길찾기가 먼저 보이도록 순서를 정함
-                order = [c for c in ("충전소", "거리(km)", "길찾기", "급속", "완속", "위치") if c in show.columns]
+                order = [c for c in ("충전소", "거리(km)", "길찾기", "낮 이용(허브 1226)", "급속", "완속", "위치") if c in show.columns]
                 show = show[order + [c for c in show.columns if c not in order]]
                 st.dataframe(show, hide_index=True, column_config={
                     "위치": st.column_config.LinkColumn("위치", display_text="카카오맵 열기"),

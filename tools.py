@@ -229,11 +229,41 @@ def find_chargers(area: str = "", quick_only: bool = False, limit: int = 5, radi
         how = f"이름에 '{area_txt}' 포함"
     if quick_only:
         g = g[g["has_quick"]]
-    if area in PLACE_COORDS:
-        g = g.sort_values(["has_quick", "distance_km"], ascending=[False, True]) if not quick_only else g
     crowd = _crowding()
+    mid = _midday_use()
+    # 허브 1226(낮 시간 이용)·1225(대기)로 순서를 정함: 가까운 곳 위주로, 낮에 붐볐거나 대기가 잦았던 곳은 뒤로
+    g = g.copy()
+    names = g["chargingPlace"].astype(str).str.strip()
+    g["busy"] = names.map(mid["level"]) if mid is not None else None
+    g["busy_n"] = names.map(mid["per_charger_day"]) if mid is not None else None
+
+    def _wait(n):
+        if crowd is None or "wait_rate" not in crowd:
+            return None
+        h = crowd[crowd["station"].apply(lambda s: s in n or n in s)]
+        return float(h.iloc[0]["wait_rate"]) if len(h) else None
+    g["wait"] = names.map(_wait)
+    if area in PLACE_COORDS:
+        # 기록이 없는 곳(2021년 뒤 생긴 곳 등)은 '보통'으로 봄 — 기록 없는 곳이 유리해지지 않게
+        g["rank_km"] = (g["distance_km"] + g["busy"].map(BUSY_PENALTY_KM).fillna(BUSY_PENALTY_KM["보통"])
+                        + (g["wait"].astype(float).fillna(0) >= 0.15) * WAIT_PENALTY_KM)
+        g = g.sort_values(["has_quick", "rank_km", "distance_km"], ascending=[False, True, True]) if not quick_only \
+            else g.sort_values(["rank_km", "distance_km"])
+    shown = g.head(limit)
+    moved = []
+    if area in PLACE_COORDS and mid is not None:
+        # 가까운 곳인데 낮에 붐볐거나 대기가 잦아 목록에서 빠진 곳은 이유와 함께 따로 알려 줌 (허브 데이터가 순서를 바꾼 경우)
+        pool = g[g["has_quick"]] if g["has_quick"].any() else g
+        near = pool.sort_values("distance_km").head(limit)
+        for _, r in near[~near["chargingPlace"].isin(shown["chargingPlace"])].iterrows():
+            busy = r.get("busy") == "붐빔"
+            wait = r.get("wait") is not None and not pd.isna(r.get("wait")) and float(r["wait"]) >= 0.15
+            if busy or wait:
+                why = (["낮(10~15시)에 붐볐던 기록(허브 1226)"] if busy else []) + \
+                      ([f"대기가 {float(r['wait']):.0%} 있었던 기록(허브 1225)"] if wait else [])
+                moved.append({"name": str(r["chargingPlace"]), "distance_km": float(r["distance_km"]), "why": " · ".join(why)})
     rows = []
-    for _, r in g.head(limit).iterrows():
+    for _, r in shown.iterrows():
         name = str(r["chargingPlace"])
         item = {"name": name, "quick_count": int(r["quick"]), "slow_count": int(r["slow"]),
                 "has_quick": bool(r["has_quick"]),   # 주차요금(parkingFeeFlag)은 값의 뜻이 문서로 확인되지 않아 넣지 않음
@@ -247,11 +277,28 @@ def find_chargers(area: str = "", quick_only: bool = False, limit: int = 5, radi
         hit = crowd[crowd["station"].apply(lambda s: s in name or name in s)] if crowd is not None else None
         if hit is not None and len(hit):
             item["crowding_2022"] = hit.iloc[0].drop("station").to_dict()
+        why = []
+        if isinstance(r.get("busy"), str):
+            item["midday_use"] = {"level": r["busy"], "per_charger_day": float(r["busy_n"]),
+                                  "period": mid.attrs.get("period", "")}
+            why.append(f"낮(10~15시) 이용 {r['busy']} (지금 충전기 1대당 하루 {float(r['busy_n']):.1f}회꼴, "
+                       f"허브 1226 {mid.attrs.get('period', '')} 기록)")
+        if r.get("wait") is not None and not pd.isna(r.get("wait")):
+            why.append(f"대기 발생 {float(r['wait']):.0%} (허브 1225, 2022년)")
+        if why:
+            item["reason"] = " · ".join(why)
         rows.append(item)
     src = ["제주데이터허브 862 전기자동차 충전소 정보 (기준일 " + str(st["baseDate"].iloc[0]) + ")"]
+    if mid is not None and any("midday_use" in x for x in rows):
+        src.append("제주데이터허브 1226 월별 전기자동차 충전 이력 (" + mid.attrs.get("period", "") + ", 충전소별 낮 시간 이용)")
     if crowd is not None:
         src.append("제주데이터허브 1225 일별 전기자동차 충전 이력")
     out = {"area": area, "search": how, "count": int(len(g)), "chargers": rows, "sources": src}
+    if moved:
+        out["moved_back"] = moved
+    if area in PLACE_COORDS and mid is not None:
+        out["ranking"] = ("가까운 순서가 기본이고, 낮(10~15시)에 붐볐던 곳은 0.25~0.5km, 대기가 잦았던 곳은 0.3km 더 먼 것처럼 "
+                          "계산해 뒤로 보냈습니다(허브 1226·1225). 잉여 시간인 낮에 가도 자리가 있을 곳을 앞에 둡니다.")
     if area in PLACE_COORDS:
         out["center"] = {"lat": PLACE_COORDS[area][0], "lon": PLACE_COORDS[area][1]}
     return out
@@ -304,6 +351,51 @@ def map_points(quick_only: bool = False) -> pd.DataFrame:
         pts.append(pd.DataFrame({"lat": w["lat_approx"], "lon": w["lon_approx"], "종류": "풍력발전소",
                                  "color": "#eb6834", "size": 300.0 + pd.to_numeric(w["설비용량_MW"], errors="coerce").fillna(0) * 25}))
     return pd.concat(pts, ignore_index=True) if pts else pd.DataFrame(columns=["lat", "lon", "종류", "color", "size"])
+
+
+_MIDDAY_CACHE: dict = {}
+
+
+def _midday_use() -> pd.DataFrame | None:
+    """허브 1226(2021년 1~3월, 충전기별·시작 시각별 충전 횟수) + 허브 862(지금 충전기 수)
+    → 충전소별 '낮(10~15시)에 얼마나 붐볐나' (한산·보통·붐빔).
+    잉여 시간(낮)에 충전하러 갔을 때 자리가 있을 가능성을 가늠하는 데 씀.
+    2021년 뒤 충전기를 늘린 곳이 많아, 2021년 낮 충전 횟수를 '지금 충전기 수'(허브 862)로 나눠 비교합니다.
+    급속이 있는 곳과 완속만 있는 곳은 원래 이용 횟수가 달라 따로 3등분합니다."""
+    if "v" in _MIDDAY_CACHE:
+        return _MIDDAY_CACHE["v"]
+    r, st = _hub_csv(1226), _hub_csv(862)
+    if r is None or st is None or "evChargingStationName" not in r:
+        _MIDDAY_CACHE["v"] = None
+        return None
+    r = r.assign(name=r["evChargingStationName"].astype(str).str.strip(),
+                 h=pd.to_numeric(r["chargingStartHour"], errors="coerce"),
+                 n=pd.to_numeric(r["chargingCount"], errors="coerce").fillna(0))
+    days = max(1, r["baseYearMonth"].nunique() * 30)
+    mid = r[r["h"].between(10, 14)].groupby("name")["n"].sum() / days
+    now = st.assign(name=st["chargingPlace"].astype(str).str.strip(),
+                    c=pd.to_numeric(st["chargerCount"], errors="coerce").fillna(0)     # 완속 대수
+                    + pd.to_numeric(st["quickChargerCount"], errors="coerce").fillna(0),  # + 급속 대수
+                    q=st["quickChargingFlag"].astype(str).str.lower().isin(["true", "1", "y"]))
+    now = now.groupby("name").agg(chargers=("c", "sum"), fast=("q", "max"))
+    out = now.join(mid.rename("mid_per_day"), how="inner")
+    out = out[out["chargers"] > 0]
+    out["per_charger_day"] = (out["mid_per_day"] / out["chargers"]).round(2)
+    out["level"] = "보통"
+    for fast in (True, False):
+        m = out["fast"] == fast
+        if m.sum() >= 3:
+            lo, hi = out.loc[m, "per_charger_day"].quantile([1 / 3, 2 / 3])
+            out.loc[m & (out["per_charger_day"] <= lo), "level"] = "한산"
+            out.loc[m & (out["per_charger_day"] >= hi), "level"] = "붐빔"
+    months = sorted(r["baseYearMonth"].astype(str).unique())
+    out.attrs["period"] = f"{months[0][:4]}년 {int(months[0][4:])}~{int(months[-1][4:])}월"
+    _MIDDAY_CACHE["v"] = out
+    return out
+
+
+BUSY_PENALTY_KM = {"한산": 0.0, "보통": 0.25, "붐빔": 0.5}   # 낮에 붐볐던 곳은 그만큼 먼 것처럼 계산해 뒤로
+WAIT_PENALTY_KM = 0.3                                     # 대기가 잦았던 곳(허브 1225, 15% 이상)
 
 
 def _crowding() -> pd.DataFrame | None:
@@ -736,7 +828,7 @@ TOOL_SPECS = [
          "target": {"type": "string", "enum": ["가전", "전기차"], "default": "가전"},
          "days": {"type": "integer", "default": 5},
          "day": {"type": "string", "description": "특정 날만: 요일 한 글자('토') 또는 YYYY-MM-DD"}}}},
-    {"name": "find_chargers", "description": "지역 이름으로 전기차 충전소(위치·급속 여부·관광객 이용 비중)를 찾는다.",
+    {"name": "find_chargers", "description": "지역 이름으로 전기차 충전소(위치·급속 여부·관광객 이용 비중)를 찾는다. 결과 순서는 가까운 곳 위주이되, 허브 1226(충전소별 낮 시간 이용)·1225(대기)로 낮에 붐볐던 곳을 뒤로 보낸 것이다(reason, moved_back, ranking).",
      "parameters": {"type": "object", "properties": {
          "area": {"type": "string", "description": "동네·장소 이름 (예: 노형, 애월, 서귀포시청)"},
          "quick_only": {"type": "boolean", "default": False},

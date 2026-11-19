@@ -84,7 +84,20 @@ def test_chargers_area_suffix_and_no_fee_claim():
     c = a["chargers"][0]
     assert "parking_fee" not in c                         # 뜻이 확인 안 된 주차요금은 내보내지 않음
     assert c["map_link"].startswith("https://map.kakao.com/link/map/")
-    assert c["distance_km"] <= a["chargers"][-1]["distance_km"]
+    assert all(x["distance_km"] <= 2.0 for x in a["chargers"])     # 반경 안에서만
+
+
+def test_chargers_ranked_by_hub_midday_use():
+    """허브 1226(낮 이용)·1225(대기)가 순서를 바꾸고, 그 이유를 답에 쓸 수 있게 내보내는지."""
+    r = tools.find_chargers("노형")
+    assert "ranking" in r and any("1226" in s for s in r["sources"])
+    levels = [c.get("midday_use", {}).get("level") for c in r["chargers"]]
+    assert "붐빔" not in levels[:2]                                   # 낮에 붐볐던 곳은 앞에 두지 않음
+    moved = r.get("moved_back", [])
+    assert moved and all("붐볐" in m["why"] or "대기" in m["why"] for m in moved)
+    assert any("reason" in c for c in r["chargers"])
+    m = tools._midday_use()
+    assert set(m["level"]) == {"한산", "보통", "붐빔"} and m.attrs["period"] == "2021년 1~3월"
 
 
 def test_grid_records_numbers():

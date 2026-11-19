@@ -60,7 +60,10 @@ def _system_prompt(profile: dict | None = None) -> str:
   (예: "내일은 가능성이 낮아요. 일요일 낮 12시~오후 2시는 '보통'이라 더 나아요.").
 - 전기차는 배터리가 몇 % 남았는지만 물을 수 있다(ask_user). 보일러는 ask_user 질문을 그대로 묻고,
   기름·가스 보일러라고 하면 fuel 을 넣어 다시 불러 support_program 을 안내한다.
-- 충전소를 알려 줄 때는 가까운 순서로 거리(distance_km)를 함께 말하고, "답 아래 '근거 보기' 표의
+- 충전소 순서는 도구가 정한 순서 그대로 쓴다(가까운 곳 위주, 제주데이터허브 1226 기록상 낮에 붐볐던 곳은 뒤로).
+  첫 번째 충전소에 reason 이 있으면 "낮(10~15시)에 한산했던 곳이라 남는 전기 시간에 가기 좋아요(허브 1226)"처럼 한 문장으로 이유를 말하고,
+  moved_back 이 있으면 "○○는 더 가깝지만 낮에 붐볐던 곳이라 뒤로 뺐어요"라고 한 문장 덧붙인다. 기록은 2021년 것이라고 짧게 밝힌다.
+- 충전소를 알려 줄 때는 거리(distance_km)를 함께 말하고, "답 아래 '근거 보기' 표의
   '내 위치에서 길찾기'를 누르면 카카오맵이 지금 위치에서 길을 안내해요"라고 안내한다. 답 본문에 링크 주소를 쓰지 않는다.
 - "내 위치", "여기서 가까운"처럼 현재 위치를 물으면, 서버는 GPS를 알 수 없으니 화면 위 '🗺️ 지도로 보기 → 📍 내 주변'에서
   '내 위치로 찾기'를 누르라고 안내하고, 저장한 내 동네가 있으면 그 동네로 찾아 준다.
@@ -577,7 +580,8 @@ def _template(name: str, r: dict) -> str:
         if not r.get("count"):
             return (f"- {r['search']}에서는 충전소를 찾지 못했어요. "
                     "동네 이름을 넣어 다시 물어봐 주세요. (예: '노형동 근처 충전소', '애월 급속 충전기')")
-        lines = [f"- {r['search']}에서 충전소 {r['count']}곳을 찾았어요. 가까운 곳(급속 먼저):"]
+        head = "가까운 곳(급속 먼저, 낮에 붐볐던 곳은 뒤로)" if r.get("ranking") else "가까운 곳(급속 먼저)"
+        lines = [f"- {r['search']}에서 충전소 {r['count']}곳을 찾았어요. {head}:"]
         for c in r["chargers"]:
             quick = f"급속 {c['quick_count']}대" if c["has_quick"] else "완속만"
             if c["slow_count"]:
@@ -590,7 +594,14 @@ def _template(name: str, r: dict) -> str:
                 extra = f" · 2022년 조사: 대기 발생 {cr['wait_rate']:.0%}, 관광객 {cr.get('tourist_share', 0):.0%}"
             link = (f" [지도]({c['map_link']})" if c.get("map_link") else "") + \
                    (f" [길찾기]({c['route_link']})" if c.get("route_link") else "")
+            mu = c.get("midday_use")
+            if mu:
+                extra += f" · 낮 이용 {mu['level']}"
             lines.append(f"  - {c['name']} ({dist}{quick}{fee}{extra}){link}")
+        for m in r.get("moved_back", []):
+            lines.append(f"  - ({m['name']} {m['distance_km']:.1f}km는 더 가깝지만 {m['why']}이 있어 뒤로 뺐어요)")
+        if r.get("ranking"):
+            lines.append("  - 순서는 제주데이터허브 1226(2021년 1~3월 충전소별 낮 시간 충전 기록)으로 정했어요.")
         return "\n".join(lines)
     if name == "ev_charging_habits":
         if "peak_charging_start_hour" not in r:

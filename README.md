@@ -39,7 +39,7 @@
 | `user_profile.py` | 내 정보(동네·차종·출퇴근·요금제) → 질문 기본값, 주소창 저장 |
 | `nearby_map.py` | 충전소 지도(내 주변·충전소 전체·답변 근거): 카카오맵 → 실패 시 OpenStreetMap. GPS(브라우저 안에서만) → 제주 밖·실패 시 저장한 동네(빨간 안내) → 카카오맵 길찾기 |
 | `calendar_link.py` | 추천 시간대 → 구글 캘린더 링크·.ics 파일(10분 전 알림) |
-| `tests/` | **pytest 자동 시험 131개** (아래 '자동 시험') |
+| `tests/` | **pytest 자동 시험 132개** (아래 '자동 시험') |
 | `run_scenarios.py` | Agent 시험 (시나리오 5개, 질문 58개, 이어지는 질문 8개, 생활 언어 답변 10개) |
 | `experiments/` | 사전 실험(Open-Meteo), 그림 그리기, **예보 날씨 오차 시험**(`forecast_error_test.py`) |
 
@@ -48,7 +48,7 @@
 |---|---|---|
 | ① forecast_surplus | 오늘~5일 뒤 시간별 잉여 확률 (범위 밖은 예보하지 않음) | EPSIS(정답), 기상청 단기예보, **허브 579**(학습) |
 | ② recommend_actions | 가전·충전 추천 시간 | ①, 요금 사실 |
-| ③ find_chargers | 동네 충전소·급속·2022년 대기·관광객 비중 | **허브 862, 1225** |
+| ③ find_chargers | 동네 충전소·급속. 낮(10~15시)에 붐볐던 곳·대기가 잦았던 곳은 뒤로 보내고 이유를 말함 | **허브 862, 1226, 1225** |
 | ④ ev_charging_habits | 도민 충전 시각 vs 잉여 시간 | **허브 1226**, EPSIS |
 | ⑤ explain_surplus | 언제·왜 생기나 (통계, 일사·바람, 설비 증가) | EPSIS, **허브 877·123·472** |
 | ⑥ check_past_forecast | 지난 예보 검증 | 예보 기록 / 시험 기간 재현 예보, EPSIS |
@@ -81,7 +81,7 @@ python -m streamlit run app.py       # 화면 (예보는 열 때 자동 갱신)
 ## 자동 시험 (재현성 확인)
 ```bash
 pip install -r requirements-dev.txt   # pytest 추가
-python -m pytest                       # 131개, 키·인터넷 없이 수 초
+python -m pytest                       # 132개, 키·인터넷 없이 수 초
 ```
 | 시험 파일 | 확인하는 것 |
 |---|---|
