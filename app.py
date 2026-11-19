@@ -34,10 +34,11 @@ except Exception:   # Secrets 파일이 없는 PC 실행이면 .env 를 씀
 st.set_page_config(page_title="제주 잉여전력 도우미", page_icon="⚡", layout="wide", initial_sidebar_state="collapsed")
 st.markdown("""<style>
 /* 한 화면(스크롤 없이)에 맞추기: 지도 높이 = 화면 높이 - 나머지(머리말·카드·버튼·그래프) → 화면이 크면 지도도 커짐 */
-:root { --map-h: clamp(200px, calc(100vh - 410px), 640px); }
+:root { --map-h: clamp(220px, calc(100vh - 300px), 700px); }
 .st-key-mapbox iframe { height: var(--map-h) !important; }
+.st-key-mapboxfull iframe { height: calc(var(--map-h) + 54px) !important; }   /* 시각 슬라이더가 없는 지도는 그만큼 더 크게 */
 .st-key-mapbox [data-testid="stDeckGlJsonChart"], .st-key-mapbox [data-testid="stDeckGlJsonChart"] > div { height: var(--map-h) !important; }
-[data-testid="stColumn"]:has(.days) [data-testid="stVerticalBlock"] { gap: .35rem; }
+[data-testid="stColumn"]:has(.days) [data-testid="stVerticalBlock"] { gap: .5rem; }
 [data-testid="stColumn"]:has(.days) [data-testid="stHorizontalBlock"] { align-items: center; }
 [data-testid="stColumn"]:has(.days) [data-testid="stVegaLiteChart"] { margin-top: -.3rem; }
 .block-container { padding-top: 2.7rem; padding-bottom: .2rem; padding-left: 1.6rem; padding-right: 1.6rem; max-width: 100%; }
@@ -64,11 +65,12 @@ h1 { font-size: 1.55rem !important; margin: 0 !important; padding: 0 !important;
 .day .d { font-size:.76rem; color:#33413c; line-height:1.3; }
 .day .lv { font-size:1rem; font-weight:800; line-height:1.3; }
 .day .t { font-size:.7rem; color:#33413c; line-height:1.25; }
+.reco { font-size:.85rem; line-height:1.6; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .win { display:inline-block; margin:2px 6px 2px 0; padding:4px 10px; border-radius:999px; background:#dff1e8;
        color:#0d6b44; font-weight:700; font-size:.85rem; }
 .panel-title { font-weight:800; font-size:1.05rem; margin-bottom:.2rem; }
 .mapnote { background:#f6f8fb; border:1px solid #dfe6ef; border-radius:10px; padding:.3rem .6rem; margin:0;
-           font-size:.82rem; line-height:1.4; color:#1b1b1b; }
+           font-size:.8rem; line-height:1.4; color:#1b1b1b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .mapnote .why { color:#1f4f8f; cursor:help; border-bottom:1px dotted #1f4f8f; white-space:nowrap; }
 .mapnote .dot { display:inline-block; width:.8rem; height:.8rem; border-radius:50%; margin-right:.35rem; vertical-align:-1px;
                 border:1px solid #fff; box-shadow:0 0 0 1px #c9d2db; }
@@ -135,6 +137,34 @@ pills.append(f"<span class='pill {'ok' if _ls['on'] else ''}'>{'AI 연결' if _l
 st.markdown(f"<h1 title='제주 재생에너지가 남는 시간을 미리 알려 드려요. 그 시간에 전기를 쓰면 버려질 전기를 살릴 수 있어요. "
             f"(데이터 상태는 왼쪽 위 ▸ 메뉴)'>⚡ 제주 잉여전력 도우미 {''.join(pills)}</h1>", unsafe_allow_html=True)
 
+def _hourly_chart(hourly, cur, wins, height: int) -> None:
+    """시간별 잉여 가능성 막대그래프 (밤은 회색 배경, 추천 3시간은 초록 띠, 고른 시각은 검은 선)."""
+    night = night_bands(hourly)
+    x = alt.X("ts:T", title=None, axis=alt.Axis(format="%m/%d %H시", labelAngle=0, tickCount="day", grid=False))
+    y = alt.Y("prob:Q", title="잉여 가능성", scale=alt.Scale(domain=[0, max(0.6, float(hourly["prob"].max()) + .05)]),
+              axis=alt.Axis(format="%"))
+    bg = alt.Chart(night).mark_rect(color="#f1f4f3").encode(x="s:T", x2="e:T")
+    bars = alt.Chart(hourly.assign(ts2=hourly["ts"] + pd.Timedelta(minutes=54))).mark_bar().encode(
+        x=x, x2="ts2:T", y=y,
+        color=alt.Color("level:N", scale=alt.Scale(domain=list(LEVEL_COLOR), range=["#f2a93b", "#3fb37c", "#c3ccd3"]),
+                        legend=alt.Legend(title=None, orient="top-left", direction="horizontal")),
+        tooltip=[alt.Tooltip("label:N", title="시간"), alt.Tooltip("pct:Q", title="가능성(%)"),
+                 alt.Tooltip("level:N", title="등급"), alt.Tooltip("basis:N", title="근거")])
+    rules = alt.Chart(pd.DataFrame({"y": [0.2, 0.5]})).mark_rule(strokeDash=[4, 4], color="#9aa8a2").encode(y="y:Q")
+    now_rule = alt.Chart(pd.DataFrame({"ts": [cur["ts"]]})).mark_rule(color="#15211d", strokeWidth=2).encode(x="ts:T")
+    win_df = pd.DataFrame([{"s": v["start"], "e": v["end"]} for v in wins]) if wins else pd.DataFrame(columns=["s", "e"])
+    win_rect = alt.Chart(win_df).mark_rect(color="#3fb37c", opacity=0.13).encode(x="s:T", x2="e:T")
+    st.altair_chart((bg + win_rect + bars + rules + now_rule).properties(height=height), use_container_width=True)
+
+
+def _html(h: str) -> None:
+    """HTML 조각. st.html 은 마크다운 여백(아래쪽 음수 여백)이 없어 촘촘히 붙여도 겹치지 않음."""
+    if hasattr(st, "html"):
+        st.html(h)
+    else:
+        st.markdown(h, unsafe_allow_html=True)
+
+
 def _surplus_pydeck(reg, q, w, cur, sel, height):
     """잉여 예보 지도 대체용(pydeck). HTML 지도를 못 그릴 때만 씀."""
     reg = reg.copy()
@@ -164,13 +194,13 @@ with left:
             f"<div class='lv'>{d['level']} · {d['max_prob']:.0%}</div>"
             f"<div class='t'>{d['likely_time_text'] if d['likely_hours'] else '-'}</div></div>"
             for d in fc["forecast"])
-        st.markdown(f"<div class='days'>{cards}</div>", unsafe_allow_html=True)
+        _html(f"<div class='days'>{cards}</div>")
         hourly = _hourly(str(date.today()))
     except FileNotFoundError:
         st.error("학습된 모델이 없습니다. 먼저 `python train.py` 를 실행하세요.")
         hourly = None
 
-    MODES = ["⚡ 잉여 예보 지도", "📍 내 주변 충전소", "🔌 충전소 전체"]
+    MODES = ["⚡ 잉여 예보", "📈 시간별 그래프", "📍 내 주변", "🔌 충전소 전체"]
     MAP_H = 440   # 기본값. 실제 높이는 CSS(--map-h)가 화면 높이에 맞춰 정함
     g, w = _nearby_data()
 
@@ -185,31 +215,32 @@ with left:
         wins, cur, sel = [], None, None
 
     # 지도 고르는 버튼과 지도 설명을 한 줄에 (세로 공간 절약)
-    c_mode, c_note = st.columns([0.42, 0.58], gap="small")
+    c_mode, c_note = st.columns([0.52, 0.48], gap="small")
     with c_mode:
         if hasattr(st, "segmented_control"):
             mode = st.segmented_control("지도", MODES, default=MODES[0], label_visibility="collapsed") or MODES[0]
         else:
             mode = st.radio("지도", MODES, horizontal=True, label_visibility="collapsed")
-    with c_note:
-        if mode == MODES[0] and cur is not None:
+    with c_note:   # 한 줄 설명 (길면 말줄임, 전체 글은 마우스를 올리면 보임)
+        if mode in MODES[:2] and cur is not None:
             # 제주는 전력망(계통)이 하나라 잉여(SMP 0원 이하)도 섬 전체에서 같은 시각에 생김 → 색은 섬 전체 예보 한 값
             _c = prob_color(cur["prob"])
-            st.markdown(
-                f"<div class='mapnote'><span class='dot' style='background:rgb({_c[0]},{_c[1]},{_c[2]})'></span>"
-                f"<b>{sel} · 섬 전체 잉여 가능성 {cur['pct']:.0f}% ({cur['level']})</b> "
-                "<span class='why' title='제주는 전력망이 하나라 남는 전기도 섬 전체에서 같은 시각에 생겨요. 그래서 원 색은 모두 같고, "
-                "원 크기가 권역별 재생에너지 설비(어디서 전기를 많이 만드는지)를 보여 줘요. 아래 슬라이더로 시각을 바꾸면 색이 바뀌어요.'>"
-                "ⓘ 왜 색이 다 같나요?</span></div>", unsafe_allow_html=True)
-        elif mode == MODES[1]:
-            st.markdown("<div class='mapnote'>📍 위치는 이 화면(브라우저) 안에서만 쓰고 저장하지 않아요. "
-                        "허용하지 않거나 제주 밖이면 '👤 내 정보'의 동네로 보여 드려요.</div>", unsafe_allow_html=True)
+            _why = ("제주는 전력망이 하나라 남는 전기도 섬 전체에서 같은 시각에 생겨요. 그래서 지도의 원 색은 모두 같고, "
+                    "원 크기가 권역별 재생에너지 설비(어디서 전기를 많이 만드는지)를 보여 줘요. 아래 슬라이더로 시각을 바꿀 수 있어요.")
+            _html(f"<div class='mapnote' title='{_why}'><span class='dot' style='background:rgb({_c[0]},{_c[1]},{_c[2]})'></span>"
+                  f"<b>{sel} · 섬 전체 {cur['pct']:.0f}% ({cur['level']})</b> <span class='why'>ⓘ 왜 섬 전체?</span></div>")
+        elif mode == MODES[2]:
+            _html("<div class='mapnote' title='위치는 이 화면(브라우저) 안에서만 쓰고 서버로 보내거나 저장하지 않아요. "
+                  "허용하지 않거나 제주 밖이면 오른쪽 위 👤 내 정보의 동네로 보여 드려요.'>📍 위치는 이 화면에서만 쓰고 저장하지 않아요 "
+                  "<span class='why'>ⓘ</span></div>")
         else:
-            st.markdown("<div class='mapnote'>🔌 제주 공용 충전소 전체와 풍력발전소 · 점을 누르면 이름과 길찾기</div>",
-                        unsafe_allow_html=True)
+            _html("<div class='mapnote'>🔌 제주 공용 충전소 전체와 풍력발전소 · 점을 누르면 길찾기</div>")
 
-    with st.container(key="mapbox"):
-        if mode == MODES[0] and cur is not None:
+    with_slider = mode in MODES[:2] and cur is not None
+    with st.container(key="mapbox" if with_slider else "mapboxfull"):
+        if mode == MODES[1] and cur is not None:
+            _hourly_chart(hourly, cur, wins, 250)
+        elif mode == MODES[0] and cur is not None:
             # ---- 잉여 예보 지도: 권역 원(크기 = 재생에너지 설비, 색 = 선택 시각 잉여 가능성) + 급속 충전소 + 풍력발전소
             reg = _regions().copy()
             _c = prob_color(cur["prob"])
@@ -224,7 +255,7 @@ with left:
                                 height=MAP_H)
             except Exception:   # HTML 지도를 못 그리면 pydeck 지도로
                 _surplus_pydeck(reg, q, w, cur, sel, MAP_H)
-        elif mode == MODES[1]:
+        elif mode == MODES[2]:
             # ---- 내 주변 충전소: GPS(브라우저 안에서만) → 저장한 동네 → 카카오맵 길찾기
             home = None
             if profile.get("area") in PLACE_COORDS:
@@ -257,34 +288,17 @@ with left:
                                          tooltip={"html": "{tip}", "style": {"fontSize": "12px"}}, map_style=None),
                                 height=MAP_H, use_container_width=True)
 
-    if cur is not None:
-        # ---- 시각 선택 + 그래프: 시간별 잉여 가능성
+    if with_slider:   # 시각 고르기 (잉여 예보 지도 색·그래프 기준선이 바뀜)
         st.select_slider("지도·그래프 시각", options=hourly["label"].tolist(), value=sel, key="sel_time",
                          label_visibility="collapsed")
-        night = night_bands(hourly)
-        x = alt.X("ts:T", title=None, axis=alt.Axis(format="%m/%d %H시", labelAngle=0, tickCount="day", grid=False))
-        y = alt.Y("prob:Q", title="잉여 가능성", scale=alt.Scale(domain=[0, max(0.6, float(hourly["prob"].max()) + .05)]),
-                  axis=alt.Axis(format="%"))
-        bg = alt.Chart(night).mark_rect(color="#f1f4f3").encode(x="s:T", x2="e:T")
-        bars = alt.Chart(hourly.assign(ts2=hourly["ts"] + pd.Timedelta(minutes=54))).mark_bar().encode(
-            x=x, x2="ts2:T", y=y,
-            color=alt.Color("level:N", scale=alt.Scale(domain=list(LEVEL_COLOR), range=["#f2a93b", "#3fb37c", "#c3ccd3"]),
-                            legend=alt.Legend(title=None, orient="top-left", direction="horizontal")),
-            tooltip=[alt.Tooltip("label:N", title="시간"), alt.Tooltip("pct:Q", title="가능성(%)"),
-                     alt.Tooltip("level:N", title="등급"), alt.Tooltip("basis:N", title="근거")])
-        rules = alt.Chart(pd.DataFrame({"y": [0.2, 0.5], "t": ["보통 20%", "높음 50%"]})).mark_rule(
-            strokeDash=[4, 4], color="#9aa8a2").encode(y="y:Q")
-        now_rule = alt.Chart(pd.DataFrame({"ts": [cur["ts"]]})).mark_rule(color="#15211d", strokeWidth=2).encode(x="ts:T")
-        win_df = pd.DataFrame([{"s": v["start"], "e": v["end"]} for v in wins]) if wins else pd.DataFrame(columns=["s", "e"])
-        win_rect = alt.Chart(win_df).mark_rect(color="#3fb37c", opacity=0.13).encode(x="s:T", x2="e:T")
-        st.altair_chart((bg + win_rect + bars + rules + now_rule).properties(height=92), use_container_width=True)
+    if cur is not None:
         _src = "출처: " + ", ".join(fc["sources"]) + " · " + fc["note"]
         if wins:
-            st.markdown("**추천 시간대(3시간)** " + "".join(f"<span class='win'>{v['text']} · {v['prob']:.0%}</span>" for v in wins)
-                        + f"<span class='legend-row' title='{_src}'> · ⓘ 출처·안내</span>", unsafe_allow_html=True)
+            _html("<div class='reco'><b>추천 시간대(3시간)</b> " + "".join(f"<span class='win'>{v['text']} · {v['prob']:.0%}</span>" for v in wins)
+                  + f"<span class='legend-row' title='{_src}'> ⓘ 출처·안내</span></div>")
         else:
-            st.markdown("<span class='legend-row'>앞으로 며칠은 재생에너지가 남을 가능성이 20%를 넘는 시간이 없어요. "
-                        f"</span><span class='legend-row' title='{_src}'>ⓘ 출처·안내</span>", unsafe_allow_html=True)
+            _html("<div class='reco'><span class='legend-row'>앞으로 며칠은 재생에너지가 남을 가능성이 20%를 넘는 시간이 없어요.</span>"
+                  f"<span class='legend-row' title='{_src}'> ⓘ 출처·안내</span></div>")
 
 
 # ================================================================ 오른쪽: 에이전트 대화 패널
