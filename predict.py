@@ -81,7 +81,7 @@ def summarize(fc: pd.DataFrame) -> pd.DataFrame:
         best = g.sort_values("prob", ascending=False).iloc[0]
         likely = sorted(int(h) for h in g.loc[g["prob"] >= 0.2, "hour"])
         rows.append({"date": pd.Timestamp(d).strftime("%Y-%m-%d"),
-                     "weekday": "월화수목금토일"[pd.Timestamp(d).dayofweek],
+                     "weekday": "월화수목금토일"[pd.Timestamp(d).day_of_week],
                      "max_prob": round(float(best["prob"]), 3), "best_hour": int(best["hour"]),
                      "likely_hours": likely, "level": level_of(float(best["prob"])),
                      "model_used": g["model_used"].iloc[0]})

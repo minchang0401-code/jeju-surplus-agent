@@ -74,7 +74,7 @@ def add_calendar(df: pd.DataFrame) -> pd.DataFrame:
     doy = d.dt.dayofyear
     out["doy_sin"] = np.sin(2 * np.pi * doy / 365.25)
     out["doy_cos"] = np.cos(2 * np.pi * doy / 365.25)
-    out["dow"] = d.dt.dayofweek  # 0=월 ... 6=일
+    out["dow"] = d.dt.day_of_week  # 0=월 ... 6=일
     out["is_weekend"] = (out["dow"] >= 5).astype(int)
     out["is_holiday"] = d.dt.strftime("%Y-%m-%d").isin(HOLIDAYS).astype(int)
     out["is_offday"] = ((out["is_weekend"] + out["is_holiday"]) > 0).astype(int)

@@ -338,7 +338,7 @@ def explain_surplus() -> dict:
     day = lab.groupby("date")["is_surplus"].max()
     month = day.groupby(day.index.month).mean().round(3)
     hour = lab.groupby("hour")["is_surplus"].sum()
-    dow = day.groupby(day.index.dayofweek).mean().round(3)
+    dow = day.groupby(day.index.day_of_week).mean().round(3)
     out = {
         "period": f"{lab['date'].min():%Y-%m-%d} ~ {lab['date'].max():%Y-%m-%d}",
         "days": int(day.size), "surplus_days": int(day.sum()), "surplus_hours": int(lab["is_surplus"].sum()),
@@ -423,7 +423,7 @@ def check_past_forecast(start: str | None = None, end: str | None = None) -> dic
         flag = p >= 0.2
         said += flag
         hit += int(flag and a == 1)
-        rows.append({"date": f"{d:%Y-%m-%d}", "weekday": WEEKDAYS[d.dayofweek],
+        rows.append({"date": f"{d:%Y-%m-%d}", "weekday": WEEKDAYS[d.day_of_week],
                      "predicted_level": "높음" if p >= 0.5 else ("보통" if p >= 0.2 else "낮음"),
                      "max_prob": round(float(p), 3), "actual_surplus": bool(a)})
     missed = sum(1 for r in rows if r["actual_surplus"] and r["predicted_level"] == "낮음")
