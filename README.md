@@ -33,7 +33,8 @@
 | `collect_hub.py` | 제주데이터허브 579·1226·1225·862 (프로젝트키) |
 | `collect_weather.py` | 기상청 ASOS 과거 관측(API허브 키) / 단기예보(공공데이터포털 키) |
 | `prepare_files.py` | 파일형 허브 데이터 877·123·472 정리 |
-| `run_scenarios.py` | Agent 시험 (시나리오 5개, 질문 58개, 이어지는 질문 8개, 생활 언어 답변 9개) |
+| `tests/` | **pytest 자동 시험 111개** (아래 '자동 시험') |
+| `run_scenarios.py` | Agent 시험 (시나리오 5개, 질문 58개, 이어지는 질문 8개, 생활 언어 답변 10개) |
 | `experiments/` | 사전 실험(Open-Meteo)과 그림 그리기 — 제출 모델과는 별개 |
 
 ### 도구 11개와 데이터
@@ -69,6 +70,20 @@ cp .env.example .env                 # 키 입력 (비워 두면 그 기능만 �
 python -m streamlit run app.py       # 화면 (예보는 열 때 자동 갱신)
 ```
 데이터를 새로 받거나 다시 학습하는 순서는 `docs/manual.md` 4장에 있습니다.
+
+## 자동 시험 (재현성 확인)
+```bash
+pip install -r requirements-dev.txt   # pytest 추가
+python -m pytest                       # 111개, 키·인터넷 없이 수 초
+```
+| 시험 파일 | 확인하는 것 |
+|---|---|
+| `tests/test_data_model.py` | 정답 데이터 숫자(900일, 잉여 347시간·127일), 시각 표기, 날씨 모델이 기준선보다 나은지 |
+| `tests/test_tools.py` | 도구 11개 명세, 예보 범위(5일) 밖은 예보하지 않음, 기기 찾기·전기차 계산, 저녁 사용 정직 안내, 보일러·출근 일정, 충전소 찾기, 계통 기록 숫자, 지도 좌표 |
+| `tests/test_agent.py` | 질문 이해 58개·이어지는 질문 8개·답변 10개·시나리오 5개(`run_scenarios.py`와 같은 목록), LLM 한도 초과·지연 재시도, 실패 시 규칙 기반 전환과 키 가림 |
+| `tests/test_security.py` | 소스·문서에 API 키가 없는지, `.env`가 제외되는지 |
+
+시험 중에는 `.env`에 LLM 키가 있어도 Gemini를 부르지 않습니다(`tests/conftest.py`). Gemini 응답 시험은 `python run_llm_eval.py`로 따로 합니다.
 
 ## 주의
 - API 키는 `.env`에만 넣고 제출물·GitHub에 올리지 마세요.
