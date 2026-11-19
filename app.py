@@ -112,7 +112,16 @@ with st.expander("🗺️ 지도로 보기 — 내 주변 충전소와 풍력발
             lat, lon = PLACE_COORDS[profile["area"]]
             home = {"name": profile["area"], "lat": lat, "lon": lon}
         if len(g):
-            components.html(nearby_map_html(g, w, home), height=760, scrolling=True)
+            try:
+                components.html(nearby_map_html(g, w, home), height=760, scrolling=True)
+            except Exception:   # Streamlit 버전이 바뀌어 HTML 지도를 못 그려도 목록과 길찾기는 보여 줌
+                if home:
+                    from tools import find_chargers
+                    near = find_chargers(home["name"], limit=5)["chargers"]
+                    st.markdown("**내 동네(" + home["name"] + ") 가까운 충전소**\n" + "\n".join(
+                        f"- {c['name']} ({c.get('distance_km', 0):.1f}km) — [여기까지 길찾기]({c['route_link']})" for c in near))
+                else:
+                    st.info("'👤 내 정보'에 동네를 저장하면 가까운 충전소와 길찾기를 보여 드려요.")
             st.caption("📍 위치는 이 화면(브라우저) 안에서만 쓰고 서버로 보내거나 저장하지 않아요. "
                        "위치를 허용하지 않으면 '👤 내 정보'에 저장한 동네 기준으로 보여 드려요. "
                        "'여기까지 길찾기'를 누르면 카카오맵이 지금 위치에서 길을 안내해요.")

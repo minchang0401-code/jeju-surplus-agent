@@ -139,8 +139,18 @@ $("quick").onclick = function () {{
 }};
 if (window.L) {{
   map = L.map("map", {{scrollWheelZoom: false}}).setView([33.38, 126.55], 10);
-  L.tileLayer("https://{{s}}.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}{{r}}.png",
-    {{attribution: "© OpenStreetMap contributors © CARTO", maxZoom: 19}}).addTo(map);
+  // 배경 지도: OpenStreetMap (키 필요 없음). 타일을 못 받으면 Esri 지도로 자동 전환
+  let fails = 0, switched = false;
+  const osm = L.tileLayer("https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png",
+    {{attribution: "© OpenStreetMap contributors", maxZoom: 19}});
+  osm.on("tileerror", function () {{
+    if (++fails >= 4 && !switched) {{
+      switched = true; map.removeLayer(osm);
+      L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{{z}}/{{y}}/{{x}}",
+        {{attribution: "Tiles © Esri", maxZoom: 19}}).addTo(map);
+    }}
+  }});
+  osm.addTo(map);
   layer = L.layerGroup().addTo(map); meLayer = L.layerGroup().addTo(map);
   drawPoints();
   // 접힌 칸·다른 탭에 있다가 펼쳐지면 지도 크기를 다시 계산 (회색 화면 방지)
