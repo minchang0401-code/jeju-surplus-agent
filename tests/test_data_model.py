@@ -34,3 +34,19 @@ def test_no_future_leak_in_test_period():
     meta = json.loads((REPORTS / "metrics.json").read_text(encoding="utf-8"))["meta"]
     text = json.dumps(meta, ensure_ascii=False)
     assert "2026-01-01" in text                                      # 시험 기간 시작일이 기록돼 있음
+
+
+def test_forecast_error_test_only_changes_test_period():
+    """예보 오차 시험: 학습 기간 날씨는 그대로, 시험 기간 날씨만 바뀌어야 함."""
+    import numpy as np
+    import pandas as pd
+    import features
+    from config import TEST_START, WEATHER_HOURLY_CSV
+    from experiments.forecast_error_test import LEVELS, perturb
+    w = features._read(WEATHER_HOURLY_CSV)
+    p = perturb(w, list(LEVELS.values())[1], np.random.default_rng(0))
+    before = w["date"] < pd.Timestamp(TEST_START)
+    cols = ["w_ta", "w_ws", "w_sky", "w_rain"]
+    assert p.loc[before, cols].equals(w.loc[before, cols])
+    assert not p.loc[~before, "w_ta"].equals(w.loc[~before, "w_ta"])
+    assert set(p["w_sky"].dropna().unique()) <= {1.0, 3.0, 4.0}
