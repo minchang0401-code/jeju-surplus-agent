@@ -220,7 +220,11 @@ function makeKakao() {
               map.setBounds(b, 8, 8, 8, 8);
               // 휴대폰처럼 좁은 화면: 카카오맵은 확대 단계가 2배씩이라 섬이 화면 절반 크기로 작아짐 → 한 단계 더 확대
               if (pts.length === 2 && $("map").clientWidth < 520) {
-                const c = b.getCenter(); map.setLevel(map.getLevel() - 1); map.setCenter(c);
+                try {   // 확대 보정이 실패해도 지도는 그대로 보이게
+                  const sw = b.getSouthWest(), ne = b.getNorthEast();   // 카카오 LatLngBounds 에는 getCenter 가 없음
+                  map.setLevel(map.getLevel() - 1);
+                  map.setCenter(new K.LatLng((sw.getLat() + ne.getLat()) / 2, (sw.getLng() + ne.getLng()) / 2));
+                } catch (e) { /* 그대로 둠 */ }
               }
             }
           };
@@ -282,7 +286,9 @@ function makeLeaflet() {
         if (!pts.length) return;
         const bb = L.latLngBounds(pts.map(q => [q[0], q[1]]));
         map.fitBounds(bb, {padding: [8, 8], maxZoom: 15});
-        if (pts.length === 2 && $("map").clientWidth < 520) map.setView(bb.getCenter(), map.getZoom() + 1);   // 좁은 화면은 한 단계 더 확대
+        if (pts.length === 2 && $("map").clientWidth < 520) {   // 좁은 화면은 한 단계 더 확대
+          try { map.setView(bb.getCenter(), map.getZoom() + 1); } catch (e) { /* 그대로 둠 */ }
+        }
       }
     };
   });
