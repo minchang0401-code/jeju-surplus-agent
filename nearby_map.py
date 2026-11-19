@@ -24,7 +24,10 @@ _PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
 <link rel="stylesheet" href="__LEAFLET_CSS__">
 <style>
  body{margin:0;font-family:"Noto Sans KR",system-ui,-apple-system,sans-serif;color:#1b1b1b;font-size:15px}
- .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:2px 0 6px}
+ /* 버튼(내 위치·급속만 보기)은 지도 안 왼쪽 위에 겹쳐 둠 */
+ .bar{position:absolute;left:10px;top:10px;z-index:1080;display:flex;flex-wrap:wrap;gap:6px;align-items:center;max-width:calc(100% - 70px)}
+ .bar button{box-shadow:0 1px 5px rgba(0,0,0,.18)}
+ .bar a{background:rgba(255,255,255,.95);padding:6px 10px;border-radius:10px;font-size:13px;box-shadow:0 1px 5px rgba(0,0,0,.18)}
  /* 채우기 배치(focus 를 뺀 모드): iframe 높이 전체를 쓰고, 지도가 남는 높이를 다 차지 → 화면 크기에 맞춰 늘고 줄어듦 */
  html.fill, html.fill body{height:100%}
  html.fill body{display:flex;flex-direction:column;overflow:hidden}
@@ -33,6 +36,12 @@ _PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
  html.fill #map{height:100%;min-height:180px}
  html.fill #list{width:280px;overflow:auto;margin-top:0}
  html.fill #list .row{flex-direction:column;gap:2px;font-size:13.5px;padding:6px 2px}
+ /* 충전소 지도(all): '내 주변 충전소'를 누르면 가까운 5곳 목록이 지도 오른쪽 위에 겹쳐 뜸 → 지도 크기는 그대로 */
+ html.all #main{position:relative}
+ html.all #list{position:absolute;right:52px;top:10px;max-height:calc(100% - 20px);width:260px;z-index:1070;
+   background:rgba(255,255,255,.97);border-radius:10px;padding:4px 10px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+ html.all #list:empty{display:none}
+ html.all #warn, html.all #msg{right:324px;max-width:none}   /* 오른쪽 목록과 겹치지 않게 */
  @media (max-width:640px){ html.fill #main{flex-direction:column} html.fill #list{width:auto;max-height:40%} }
  #legend{position:absolute;left:10px;bottom:10px;z-index:1050;background:rgba(255,255,255,.92);border-radius:8px;
    padding:5px 9px;font-size:12px;color:#33413c;box-shadow:0 1px 4px rgba(0,0,0,.12);max-width:75%}
@@ -42,22 +51,24 @@ _PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
    padding:7px 12px;font-size:15px;font-weight:700;color:#15211d;box-shadow:0 2px 8px rgba(0,0,0,.15);display:flex;gap:8px;align-items:center}
  #badge:empty{display:none}
  #badge .bd{width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px #c9d2db}
- #engine{margin-left:auto}
- button{font-size:15px;padding:8px 14px;border-radius:10px;border:1px solid #2a78d6;background:#2a78d6;color:#fff;cursor:pointer}
+ button{font-size:14px;padding:7px 12px;border-radius:10px;border:1px solid #2a78d6;background:#2a78d6;color:#fff;cursor:pointer}
  button.sub{background:#fff;color:#2a78d6}
  button.on{background:#1a7f4b;border-color:#1a7f4b;color:#fff;font-weight:600}
- #msg{color:#52514e;font-size:14px;min-height:20px}
- #engine{color:#7a7974;font-size:12px}
+ #msg{position:absolute;left:10px;top:54px;z-index:1075;max-width:calc(100% - 80px);color:#52514e;font-size:13.5px;
+   background:rgba(255,255,255,.95);padding:6px 10px;border-radius:8px;box-shadow:0 1px 5px rgba(0,0,0,.15)}
+ #engine{position:absolute;right:10px;bottom:6px;z-index:1050;color:#7a7974;font-size:11px;background:rgba(255,255,255,.8);
+   padding:1px 6px;border-radius:6px}
+ #engine:empty{display:none}
  #map{height:__HEIGHT__px;border-radius:12px;background:#e8eff3}
  #wrap{position:relative}
  /* 꼭 봐야 하는 안내(제주 밖·위치 실패): 지도 위쪽에 겹쳐 띄움 → 높이가 늘지 않아 스크롤이 생기지 않음 */
- #warn{position:absolute;top:10px;left:10px;right:58px;z-index:1100;display:none;gap:8px;align-items:flex-start;
+ #warn{position:absolute;top:54px;left:10px;right:58px;z-index:1100;display:none;gap:8px;align-items:flex-start;
    background:rgba(255,255,255,.96);border:1px solid #f1b5b3;border-left:5px solid #d32f2f;border-radius:10px;
    padding:9px 10px 9px 12px;box-shadow:0 2px 8px rgba(0,0,0,.12);color:#c62828;font-size:15.5px;font-weight:600;line-height:1.45}
  #warn.show{display:flex}
  #warn span{flex:1}
  #warn button{background:none;border:none;color:#c62828;font-size:16px;padding:0 2px;line-height:1}
- #msg:empty{min-height:0;margin:0}
+ #msg:empty{display:none}
  #msg.ok{color:#1251a8;font-weight:600}
  #msg.warn{color:#c62828;font-weight:600}
  #list{margin-top:8px}
@@ -70,15 +81,16 @@ _PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
  .rlabel-l{background:none;border:none;box-shadow:none;font-size:12px;font-weight:700;color:#15211d;white-space:pre;
    text-shadow:0 0 3px #fff,0 0 3px #fff}
 </style></head><body>
+<div id="main">
+<div id="wrap"><div id="map"></div>
 <div class="bar" id="bar">
  <button id="gps">📍 내 위치로 찾기</button>
+ <button class="sub" id="allview" style="display:none">🗺️ 제주 전체 보기</button>
  <button class="sub" id="quick" aria-pressed="false">급속만 보기: 끔</button>
  <a id="kksearch" target="_blank" rel="noopener" href="https://map.kakao.com/link/search/%EC%A0%84%EA%B8%B0%EC%B0%A8%EC%B6%A9%EC%A0%84%EC%86%8C">카카오맵에서 내 주변 충전소 검색 ↗</a>
- <span id="engine"></span>
-</div>
-<div id="msg"></div>
-<div id="main">
-<div id="wrap"><div id="map"></div><div id="badge"></div><div id="legend"></div><div id="warn" role="alert"><span id="warnText"></span><button id="warnX" title="닫기" aria-label="안내 닫기">✕</button></div></div>
+ </div>
+<div id="msg"></div><span id="engine"></span>
+<div id="badge"></div><div id="legend"></div><div id="warn" role="alert"><span id="warnText"></span><button id="warnX" title="닫기" aria-label="안내 닫기">✕</button></div></div>
 <div id="list"></div>
 </div>
 <script>
@@ -86,7 +98,7 @@ const D = __DATA__;
 const P = D.p, W = D.w, HOME = D.home, KKEY = D.kakao_key, MODE = D.mode || "near";
 const R = D.regions || [], RCOLOR = D.region_color || "#7cc49a";
 const QUICK = "#2a78d6", SLOW = "#5a4fcf";   // 급속 = 파란 점, 완속 = 보라 테두리 고리 (회색은 지도 위에서 안 보여서 바꿈)
-if (MODE !== "focus") document.documentElement.className = "fill";
+if (MODE !== "focus") document.documentElement.className = "fill" + (MODE === "all" ? " all" : "");
 let quickOnly = false, eng = null, last = null, touched = false;
 const $ = (id) => document.getElementById(id);
 // kind: "warn" = 빨간 안내를 지도 위에 띄움(제주 밖·위치 실패), "ok" = GPS 성공(파란 글씨), 없으면 보통 안내
@@ -130,7 +142,7 @@ function watchResize(fn) {
   const again = function () {
     if (!$("map").clientWidth) return;
     fn();
-    if (eng && !touched) { if (MODE !== "near") eng.fit(fitPoints()); else if (last) eng.me.apply(null, last); else eng.home(); }
+    if (eng && !touched) { if (last && (MODE === "near" || MODE === "all")) eng.me.apply(null, last); else if (MODE !== "near") eng.fit(fitPoints()); else eng.home(); }
   };
   if (window.ResizeObserver) new ResizeObserver(again).observe($("map"));
   if (window.IntersectionObserver) new IntersectionObserver(function (es) { if (es.some(e => e.isIntersecting)) again(); }).observe($("map"));
@@ -293,6 +305,7 @@ function showList(lat, lon, label) {
 function showAt(lat, lon, label, acc, isGps) {
   last = [lat, lon, label, acc, isGps];
   showList(lat, lon, label);
+  if (MODE === "all") $("allview").style.display = "";
   if (eng) eng.me(lat, lon, label, acc, isGps);
 }
 function useHome(reason) {
@@ -324,6 +337,12 @@ $("gps").onclick = function () {
   }, {enableHighAccuracy: true, timeout: 10000, maximumAge: 60000});
 };
 $("warnX").onclick = function () { $("warn").className = ""; };
+// 충전소 지도: '🗺️ 제주 전체 보기' → 확대 전으로 (목록 닫음)
+$("allview").onclick = function () {
+  last = null; touched = false; $("list").innerHTML = ""; this.style.display = "none";
+  $("warn").className = ""; $("msg").textContent = "";
+  if (eng) eng.fit(fitPoints());
+};
 $("quick").onclick = function () {
   quickOnly = !quickOnly;
   // 켜졌는지 한눈에 보이도록: 끔 = 흰 바탕, 켬 = 초록 바탕 + ✓
@@ -377,6 +396,7 @@ function ready(api) {
 }
 function noMap() {
   $("map").style.display = "none";
+  ["bar", "msg"].forEach(function (id) { $(id).style.position = "static"; $(id).style.margin = "4px 0"; });   // 지도가 없으면 버튼을 위에 그냥 둠
   say("지도 그림을 불러오지 못했어요. 가까운 충전소 목록과 길찾기는 그대로 쓸 수 있어요.", "warn");
 }
 const startMap = KKEY
@@ -388,10 +408,10 @@ const startMap = KKEY
   : makeLeaflet();
 startMap.then(ready).catch(noMap);
 // 모드: near = 내 주변(GPS·목록) / all = 제주 전체(GPS·목록 없음) / focus = 답변에서 찾은 충전소만
-if (MODE !== "near") { $("gps").style.display = "none"; $("kksearch").style.display = "none"; }
+if (MODE === "all") { $("gps").textContent = "📍 내 주변 충전소"; $("kksearch").style.display = "none"; }
+else if (MODE !== "near") { $("gps").style.display = "none"; $("kksearch").style.display = "none"; }
 const nQ = P.filter(p => p[2]).length;
-if (MODE === "all") {
-  $("list").style.display = "none";
+if (MODE === "all") {   // 처음엔 제주 전체, '📍 내 주변 충전소'를 누르면 내 위치(안 되면 저장한 동네)로 확대 + 가까운 5곳
   chargerLegend();
 } else if (MODE === "surplus") {
   $("list").style.display = "none"; $("quick").style.display = "none";
@@ -400,7 +420,7 @@ if (MODE === "all") {
     const t = document.createElement("span"); t.textContent = D.badge;
     $("badge").appendChild(dot); $("badge").appendChild(t);
   }
-  setLegend([[null, "원 크기 = 권역 재생에너지 설비(허브 123 태양광 + 풍력발전현황)"], ["q", "급속 충전소(허브 862)"], ["w", "풍력발전소"]]);
+  setLegend([[null, "원 크기 = 권역 재생에너지 설비(허브 123 태양광 + 풍력발전현황)"], ["w", "풍력발전소"]]);
 } else if (MODE === "focus") {
   $("list").style.display = "none"; $("quick").style.display = "none";
   setLegend([["w", "찾은 동네 중심"], ["q", "급속 있음"], ["s", "완속만"]]);
@@ -413,8 +433,9 @@ else { chargerLegend(); say("'📍 내 위치로 찾기'를 누르면 가까운 
 def nearby_map_html(chargers, wind=None, home: dict | None = None, height: int = 430, kakao_key: str | None = None,
                     mode: str = "near", regions: list | None = None, region_color: str | None = None,
                     badge: str | None = None) -> str:
-    """mode: 'near'(내 주변: GPS 버튼·가까운 5곳 목록) / 'all'(제주 전체: 모든 점, 목록 없음)
-    / 'focus'(답변에서 찾은 충전소만, home=찾은 동네 중심) / 'surplus'(잉여 예보 지도: 권역 원 regions + 급속 충전소).
+    """mode: 'near'(내 주변: GPS 버튼·가까운 5곳 목록) / 'all'(충전소 지도: 제주 전체 → 내 주변 버튼으로 확대)
+    / 'focus'(답변에서 찾은 충전소만, home=찾은 동네 중심) / 'surplus'(잉여 예보 지도: 권역 원 regions + 풍력, 충전소 없음).
+    'all' 은 처음엔 제주 전체를 보여 주고, '📍 내 주변 충전소'를 누르면 GPS(안 되면 저장한 동네)로 확대 + 가까운 5곳 목록.
     focus 를 뺀 모드는 iframe 높이를 꽉 채움(화면 크기에 맞춰 지도 높이가 바뀜). height 는 focus 에서만 씀.
     chargers: name·lat·lon·quick·quick_count 열이 있는 표. wind: lat·lon·mw 표(선택).
     home: {'name': '노형', 'lat': .., 'lon': ..} — 저장한 내 동네 (없으면 None).

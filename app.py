@@ -2,7 +2,7 @@
 
     streamlit run app.py
 
-화면 구성: 왼쪽 = 예보 카드 · 지도 · 시간별 잉여 가능성 그래프 / 오른쪽 = 에이전트 대화 패널 / 오른쪽 맨 위 = 👤 내 정보 한 줄 / 사이드바 = 데이터 상태
+화면 구성: 왼쪽 = 예보 카드 · 지도 · 시간별 잉여 가능성 그래프 / 오른쪽 = 에이전트 대화 패널 / 오른쪽 맨 위 = 👤 내 정보(칸마다 바로 수정) / 사이드바 = 데이터 상태
 """
 from __future__ import annotations
 
@@ -19,7 +19,10 @@ from agent import ask, llm_status
 from calendar_link import google_url, ics_bytes, pick_window
 from collect_weather import refresh_forecast_if_stale
 from dashboard_view import LEVEL_COLOR, best_windows, hourly_frame, night_bands, prob_color, region_capacity
-from nearby_map import nearby_map_html
+import importlib
+import nearby_map as _nearby_map
+importlib.reload(_nearby_map)   # 지도 파일만 고쳐도 새로고침하면 바로 반영 (Streamlit 이 바뀐 모듈을 못 알아챌 때가 있음)
+nearby_map_html = _nearby_map.nearby_map_html
 from tools import PLACE_COORDS, charger_places, data_status, forecast_surplus
 import user_profile as up
 
@@ -53,19 +56,18 @@ header[data-testid="stHeader"] { height: 2.4rem; background: rgba(255,255,255,.8
 .st-key-sidepanel { gap: .45rem; }
 .st-key-sidepanel button { min-height: 2rem; padding: .15rem .4rem; }
 .st-key-sidepanel button p { font-size: .78rem; white-space: nowrap; }
-.st-key-myinfo { gap: .2rem; background: #f6f9fd; padding: .45rem .6rem !important; }
+.st-key-myinfo { gap: .45rem; background: #f6f9fd; }
 .st-key-myinfo [data-testid="stHorizontalBlock"] { gap: .3rem; }
-.st-key-myinfo [data-baseweb="select"] > div { min-height: 1.85rem; font-size: .8rem; padding-top: 0; padding-bottom: 0; }
-.st-key-myinfo [data-baseweb="select"] div { line-height: 1.2; }
+.st-key-myinfo [data-baseweb="select"] { font-size: .84rem; }
 .me-title { font-weight: 700; font-size: .92rem; color: #1f4f8f; margin-bottom: .1rem; }
 .me-note { font-weight: 400; font-size: .7rem; color: #8a9893; margin-left: 4px; }
-.me-k { color: #5b6b66; font-size: .78rem; white-space: nowrap; }
+.me-k { color: #3d4b46; font-size: .84rem; font-weight: 600; white-space: nowrap; }
 .st-key-chatpanel { gap: .35rem; }
 .st-key-quickq { gap: .3rem; }
 .st-key-quickq button { min-height: 1.75rem; border-radius: 999px; background: #f4f7f6; }
 .st-key-quickq button p { font-size: .74rem; }
 .st-key-sidepanel [data-testid="stHorizontalBlock"] { gap: .35rem; }
-[data-testid="stLayoutWrapper"]:has(> .st-key-chatbox), .st-key-chatbox { flex: 0 0 calc(100vh - 29.5rem) !important; height: calc(100vh - 29.5rem) !important; min-height: 200px; }
+[data-testid="stLayoutWrapper"]:has(> .st-key-chatbox), .st-key-chatbox { flex: 0 0 calc(100vh - 33.5rem) !important; height: calc(100vh - 33.5rem) !important; min-height: 200px; }
 .st-key-sidepanel [data-testid="stChatInput"] textarea { font-size: .82rem; }
 h1 { font-size: 1.55rem !important; margin: 0 !important; padding: 0 !important; }
 .sub { color: #5b6b66; font-size: .9rem; margin-top: .1rem; }
@@ -213,7 +215,7 @@ with left:
         st.error("학습된 모델이 없습니다. 먼저 `python train.py` 를 실행하세요.")
         hourly = None
 
-    MODES = ["⚡ 잉여 예보 지도", "📍 내 주변 충전소", "🔌 충전소 전체"]
+    MODES = ["⚡ 잉여 예보 지도", "🔌 충전소 지도"]
     MAP_H = 440   # 기본값. 실제 높이는 CSS(--map-h)가 화면 높이에 맞춰 정함
     g, w = _nearby_data()
 
@@ -242,24 +244,22 @@ with left:
                     "원 크기가 권역별 재생에너지 설비(어디서 전기를 많이 만드는지)를 보여 줘요. 아래 슬라이더로 시각을 바꿀 수 있어요.")
             _html(f"<div class='mapnote' title='{_why}'><span class='dot' style='background:rgb({_c[0]},{_c[1]},{_c[2]})'></span>"
                   f"<b>{sel} · 제주에 전기가 남을 가능성 {cur['pct']:.0f}% ({cur['level']})</b> <span class='why'>ⓘ 왜 색이 다 같나요?</span></div>")
-        elif mode == MODES[1]:
-            _html("<div class='mapnote' title='위치는 이 화면(브라우저) 안에서만 쓰고 서버로 보내거나 저장하지 않아요. "
-                  "허용하지 않거나 제주 밖이면 오른쪽 위 👤 내 정보의 동네로 보여 드려요.'>📍 위치는 이 화면에서만 쓰고 저장하지 않아요 "
-                  "<span class='why'>ⓘ</span></div>")
         else:
-            _html("<div class='mapnote'>🔌 제주 공용 충전소 전체와 풍력발전소 · 점을 누르면 길찾기</div>")
+            _html("<div class='mapnote' title='위치는 이 화면(브라우저) 안에서만 쓰고 서버로 보내거나 저장하지 않아요. "
+                  "허용하지 않거나 제주 밖이면 오른쪽 👤 내 정보의 동네로 보여 드려요.'>🔌 제주 공용 충전소 전체 · "
+                  "<b>📍 내 주변 충전소</b>를 누르면 내 위치로 확대돼요 (위치는 저장 안 함) <span class='why'>ⓘ</span></div>")
 
     with_slider = cur is not None   # 시각 슬라이더와 시간별 그래프는 지도 아래에 늘 보임
     with st.container(key="mapbox"):
         if mode == MODES[0] and cur is not None:
-            # ---- 잉여 예보 지도: 권역 원(크기 = 재생에너지 설비, 색 = 선택 시각 잉여 가능성) + 급속 충전소 + 풍력발전소
+            # ---- 잉여 예보 지도: 권역 원(크기 = 재생에너지 설비, 색 = 선택 시각 잉여 가능성) + 풍력발전소 (충전소는 충전소 지도에서)
             reg = _regions().copy()
             _c = prob_color(cur["prob"])
             regions = [[float(r.lat), float(r.lon), float(900 + max(r.total_mw, 0) ** 0.5 * 430),
                         f"{r.name}\n{r.total_mw:.0f}MW",
                         f"{r.name} · 태양광 {r.solar_mw:.0f}MW · 풍력 {r.wind_mw:.0f}MW · {sel} 잉여 가능성 {cur['pct']:.0f}% (섬 전체)"]
                        for r in reg.itertuples()]
-            q = g[g["quick"]] if len(g) else g
+            q = g.iloc[0:0]   # 충전소 점은 넣지 않음
             try:   # 다른 지도와 같은 카카오맵(→ OpenStreetMap)
                 components.html(nearby_map_html(q, w, None, height=MAP_H, kakao_key=_kakao_key(), mode="surplus",
                                                 regions=regions, region_color=f"rgb({_c[0]},{_c[1]},{_c[2]})",
@@ -267,29 +267,14 @@ with left:
                                 height=MAP_H)
             except Exception:   # HTML 지도를 못 그리면 pydeck 지도로
                 _surplus_pydeck(reg, q, w, cur, sel, MAP_H)
-        elif mode == MODES[1]:
-            # ---- 내 주변 충전소: GPS(브라우저 안에서만) → 저장한 동네 → 카카오맵 길찾기
+        else:
+            # ---- 충전소 지도: 제주 전체 → '📍 내 주변 충전소'로 확대(GPS → 저장한 동네). 카카오맵 → OpenStreetMap → pydeck
             home = None
             if profile.get("area") in PLACE_COORDS:
                 lat, lon = PLACE_COORDS[profile["area"]]
                 home = {"name": profile["area"], "lat": lat, "lon": lon}
-            if len(g):
-                try:   # 카카오맵(KAKAO_JS_KEY 가 있을 때) → OpenStreetMap. 목록은 지도 오른쪽
-                    components.html(nearby_map_html(g, w, home, height=MAP_H, kakao_key=_kakao_key()), height=MAP_H)
-                except Exception:   # HTML 지도를 못 그려도 목록과 길찾기는 보여 줌
-                    if home:
-                        from tools import find_chargers
-                        near = find_chargers(home["name"], limit=5)["chargers"]
-                        st.markdown("**내 동네(" + home["name"] + ") 가까운 충전소**\n" + "\n".join(
-                            f"- {c['name']} ({c.get('distance_km', 0):.1f}km) — [여기까지 길찾기]({c['route_link']})" for c in near))
-                    else:
-                        st.info("'👤 내 정보'에 동네를 저장하면 가까운 충전소와 길찾기를 보여 드려요.")
-            else:
-                st.info("충전소 데이터(허브 862)가 없어 내 주변 지도를 그릴 수 없어요.")
-        else:
-            # ---- 충전소 전체: 같은 지도(카카오맵 → OpenStreetMap), 실패하면 pydeck
             try:
-                components.html(nearby_map_html(g, w, None, height=MAP_H, kakao_key=_kakao_key(), mode="all"), height=MAP_H)
+                components.html(nearby_map_html(g, None, home, height=MAP_H, kakao_key=_kakao_key(), mode="all"), height=MAP_H)   # 풍력발전소는 잉여 예보 지도에만
             except Exception:
                 pts = g.assign(color=[[42, 120, 214, 190] if v else [154, 154, 150, 150] for v in g["quick"]],
                                tip=[f"<b>{n}</b><br>급속 {int(a)}기 · 완속 {int(b)}기" for n, a, b in
@@ -408,41 +393,6 @@ def _render_evidence(res: dict) -> None:
             st.caption("출처: " + ", ".join(map(str, r.get("sources", []))))
 
 
-def _profile_form(where: str = "panel") -> None:
-    """내 정보 입력 창. 오른쪽 '에너지 도우미' 맨 위 👤 버튼(where="panel")과 사이드바(where="side") 두 곳에 있고,
-    어느 쪽에서 저장해도 같은 내 정보로 반영됨."""
-    places = ["선택 안 함"] + [p for p in PLACE_COORDS if p not in ("공항", "시청", "터미널", "도청")]
-    cars = list(up.CARS)
-    with st.form(f"profile_form_{where}"):
-        area = st.selectbox("사는 동네", places, index=places.index(profile["area"]) if profile["area"] in places else 0)
-        car_label = next((k for k, v in up.CARS.items() if v == profile["car"]), cars[0])
-        car = st.selectbox("전기차", cars, index=cars.index(car_label))
-        work = st.checkbox("평일에 출근해요", value=profile["work_start"] is not None)
-        hrs = list(range(0, 25))
-        cs, ce = st.columns(2)
-        ws = cs.selectbox("나가는 시각", hrs, index=profile["work_start"] if profile["work_start"] is not None else 9,
-                          format_func=lambda h: f"{h}시")
-        we = ce.selectbox("돌아오는 시각", hrs, index=profile["work_end"] if profile["work_end"] is not None else 18,
-                          format_func=lambda h: f"{h}시")
-        tou = st.radio("계시별(시간대별) 요금제", up.TOU, index=up.TOU.index(profile["tou"]), horizontal=True)
-        if st.form_submit_button("저장", use_container_width=True):
-            new = up.empty()
-            new["area"] = "" if area == "선택 안 함" else area
-            new["car"] = up.CARS[car]
-            if work and ws < we:
-                new["work_start"], new["work_end"] = int(ws), int(we)
-            new["tou"] = tou
-            st.session_state.profile = new
-            try:
-                st.query_params.from_dict(up.to_query(new))
-            except Exception:
-                pass
-            st.rerun()
-    if up.is_set(profile):
-        st.caption("저장됨: " + up.summary(profile))
-        st.caption("이 페이지 주소를 즐겨찾기하면 다음에도 내 정보가 그대로 불러와져요. 이름·연락처는 받지 않아요.")
-
-
 try:
     side = right.container(key="sidepanel")
 except TypeError:   # 아주 옛날 Streamlit
@@ -456,7 +406,7 @@ with side:
     _TOU = {"모름": "모름", "가입": "계시별 가입", "미가입": "미가입"}
 
     def _me_sync() -> None:
-        """현재 내 정보 → 칸 값 (사이드바에서 바꿔도 같은 값이 보이도록 매번 맞춤)"""
+        """현재 내 정보 → 칸 값 (주소창으로 불러온 값도 그대로 보이도록 매번 맞춤)"""
         p_ = st.session_state.profile
         st.session_state.me_area = p_["area"] if p_["area"] in _PLACES else "선택 안 함"
         st.session_state.me_car = next((k for k, v in up.CARS.items() if v == p_["car"]), _CARS[0])
@@ -549,8 +499,6 @@ with chat_box:
 
 # ================================================================ 사이드바: 데이터 상태
 with st.sidebar:
-    with st.expander("👤 내 정보 (한 번 넣으면 질문마다 반영)", expanded=not up.is_set(profile)):
-        _profile_form("side")
     st.subheader("데이터 상태")
     for k, v in status["available"].items():
         st.write(("✅ " if v else "⬜ ") + k)
