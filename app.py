@@ -53,10 +53,20 @@ header[data-testid="stHeader"] { height: 2.4rem; background: rgba(255,255,255,.8
 .st-key-sidepanel { gap: .45rem; }
 .st-key-sidepanel button { min-height: 2rem; padding: .15rem .4rem; }
 .st-key-sidepanel button p { font-size: .78rem; white-space: nowrap; }
-.st-key-myinfo button { justify-content: flex-start; background: #f4f8ff; border-color: #c9dbf5; }
-.st-key-myinfo button p { white-space: normal; text-align: left; font-weight: 600; color: #1f4f8f; }
+.st-key-myinfo { gap: .25rem; background: #f6f9fd; }
+.st-key-myinfo button { min-height: 1.6rem; padding: 0 .4rem; }
+.me-title { font-weight: 700; font-size: .92rem; color: #1f4f8f; }
+.me-grid { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: .8rem; line-height: 1.35; }
+.me-grid .k { color: #6b7a75; }
+.me-grid .v { color: #15211d; font-weight: 600; }
+.me-grid .v.empty { color: #a3aea9; font-weight: 400; }
+.me-hint { font-size: .74rem; color: #6b7a75; margin-top: 3px; }
+.st-key-chatpanel { gap: .35rem; }
+.st-key-quickq { gap: .3rem; }
+.st-key-quickq button { min-height: 1.75rem; border-radius: 999px; background: #f4f7f6; }
+.st-key-quickq button p { font-size: .74rem; }
 .st-key-sidepanel [data-testid="stHorizontalBlock"] { gap: .35rem; }
-[data-testid="stLayoutWrapper"]:has(> .st-key-chatbox), .st-key-chatbox { flex: 0 0 calc(100vh - 23rem) !important; height: calc(100vh - 23rem) !important; min-height: 200px; }
+[data-testid="stLayoutWrapper"]:has(> .st-key-chatbox), .st-key-chatbox { flex: 0 0 calc(100vh - 25rem) !important; height: calc(100vh - 25rem) !important; min-height: 200px; }
 .st-key-sidepanel [data-testid="stChatInput"] textarea { font-size: .82rem; }
 h1 { font-size: 1.55rem !important; margin: 0 !important; padding: 0 !important; }
 .sub { color: #5b6b66; font-size: .9rem; margin-top: .1rem; }
@@ -317,9 +327,9 @@ with left:
 # ================================================================ 오른쪽: 에이전트 대화 패널
 def _chatbox():
     try:
-        return st.container(height=520, border=True, key="chatbox")   # 높이는 CSS 가 화면에 맞춰 덮어씀
+        return st.container(height=520, border=False, key="chatbox")   # 높이는 CSS 가 화면에 맞춰 덮어씀
     except TypeError:
-        return st.container(height=520, border=True)
+        return st.container(height=520, border=False)
 
 
 def _hub_badge(res: dict) -> str:
@@ -439,30 +449,47 @@ try:
 except TypeError:   # 아주 옛날 Streamlit
     side = right.container()
 with side:
-    st.markdown("<div class='panel-title'>💬 에너지 도우미</div>", unsafe_allow_html=True)
-    # 👤 내 정보 한 줄: 사이드바는 휴대폰에서 접혀 안 보이므로 대화창 바로 위에 둠
-    _me = up.short(profile)
-    _label = f"👤 {_me}  ✎ 바꾸기" if _me else "👤 내 정보 넣기 (동네·차·출퇴근) — 답이 더 정확해져요"
-    with st.container(key="myinfo"):
-        if hasattr(st, "popover"):
-            with st.popover(_label, use_container_width=True):
-                _profile_form("panel")
-        else:
-            with st.expander(_label, expanded=not _me):
-                _profile_form("panel")
-    qa, qb = st.columns(2)
-    preset = None
-    if qa.button("이번 주 언제가 좋아?", use_container_width=True):
-        preset = "이번 주에 빨래랑 식기세척기 언제 돌리면 좋아?"
-    if qb.button("전기차 충전", use_container_width=True):
-        preset = "이번 주에 전기차 충전은 언제 어디서 하면 좋아?"
-    qc, qd = st.columns(2)
-    if qc.button("왜 생기는 거야?", use_container_width=True):
-        preset = "잉여전력이 왜 생기는 거야?"
-    if qd.button("지난 예보 맞았어?", use_container_width=True):
-        preset = "지난주 예보가 실제로 맞았는지 알려줘"
-    chat_box = _chatbox()
-    question = st.chat_input("궁금한 것을 물어보세요") or preset
+    # ---- 위: 👤 내 정보 (늘 펼쳐서 표시, 수정은 ✎ 버튼)
+    import html as _h
+    _rows = [("동네", profile.get("area") or ""),
+             ("전기차", profile.get("car") or ""),
+             ("출퇴근", f"평일 {profile['work_start']}~{profile['work_end']}시 집에 없음"
+                        if profile.get("work_start") is not None else ""),
+             ("요금제", "" if profile.get("tou") in (None, "모름") else f"계시별 {profile['tou']}")]
+    with st.container(key="myinfo", border=True):
+        ct, ce = st.columns([0.62, 0.38], vertical_alignment="center")
+        ct.markdown("<div class='me-title'>👤 내 정보</div>", unsafe_allow_html=True)
+        with ce:
+            if hasattr(st, "popover"):
+                with st.popover("✎ 수정", use_container_width=True):
+                    _profile_form("panel")
+            elif st.button("✎ 수정", use_container_width=True):
+                st.session_state.show_form = not st.session_state.get("show_form", False)
+        if not hasattr(st, "popover") and st.session_state.get("show_form"):
+            _profile_form("panel")
+        st.markdown("<div class='me-grid'>" + "".join(
+            f"<span class='k'>{k}</span><span class='v{'' if v else ' empty'}'>{_h.escape(v) if v else '안 넣음'}</span>"
+            for k, v in _rows) + "</div>"
+            + ("" if up.is_set(profile) else "<div class='me-hint'>넣어 두면 답이 내 동네·차·생활에 맞춰져요.</div>"),
+            unsafe_allow_html=True)
+
+    # ---- 아래: 💬 에너지 도우미 (대화 → 예시 질문 → 입력창)
+    with st.container(key="chatpanel", border=True):
+        st.markdown("<div class='panel-title'>💬 에너지 도우미</div>", unsafe_allow_html=True)
+        chat_box = _chatbox()
+        preset = None
+        with st.container(key="quickq"):
+            qa, qb = st.columns(2)
+            if qa.button("이번 주 언제가 좋아?", use_container_width=True):
+                preset = "이번 주에 빨래랑 식기세척기 언제 돌리면 좋아?"
+            if qb.button("전기차 충전", use_container_width=True):
+                preset = "이번 주에 전기차 충전은 언제 어디서 하면 좋아?"
+            qc, qd = st.columns(2)
+            if qc.button("왜 생기는 거야?", use_container_width=True):
+                preset = "잉여전력이 왜 생기는 거야?"
+            if qd.button("지난 예보 맞았어?", use_container_width=True):
+                preset = "지난주 예보가 실제로 맞았는지 알려줘"
+        question = st.chat_input("궁금한 것을 물어보세요") or preset
 
 if question:
     with right:
