@@ -56,6 +56,9 @@ def _system_prompt(profile: dict | None = None) -> str:
   오후 12~18, 저녁 18~22, 밤 20~24, 'N시' = 그 시각부터. 날은 day 에 넣는다(오늘·내일은 날짜로, 요일은 한 글자).
 - 원하는 시간대에 남는 전기가 거의 없으면(level 낮음 또는 requested_window_best 없음) 솔직히 그렇다고 먼저 말하고,
   best_windows·alternatives 의 더 나은 시간대와 예약 기능을 권한다. evening_note 가 있으면 함께 전한다.
+- 도구 결과에 participation 이 있으면 답 맨 끝에 한두 문장으로 '실제로 참여하는 길'을 전한다(요금제 확인 창구, 전기차면 플러스 DR).
+  내 정보가 계시별 요금제 '가입'이면 "가입하셨으니 이 낮 시간이 저녁보다 요금도 싸요"처럼 한 문장만 말하고 가입 권유는 뺀다.
+  evening_note 에서 요금 이야기를 이미 했으면 되풀이하지 않는다. 플러스 DR은 '2021년 시범사업이 있었고 지금 참여 가능 여부는 확인 필요'라는 점을 바꾸지 않는다.
 - 시간대를 말할 때는 가능성 등급(높음·보통·낮음)을 꼭 함께 말한다. 등급이 '낮음'인 때를 '좋다'고만 말하지 않는다.
 - plan_appliance_use 결과에 better_option 이 있으면 반드시 그 날짜·시간대·등급을 함께 알려 준다
   (예: "내일은 가능성이 낮아요. 일요일 12시~14시는 '보통'이라 더 나아요.").
@@ -528,6 +531,10 @@ def _plan_text(r: dict) -> str:
     lines.append(f"- {r['how']}")
     if r.get("ask_user"):
         lines.append(f"- {r['ask_user']}")
+    for p in r.get("participation", []):   # 실제 참여로 이어지는 길 (요금제 · 플러스 DR)
+        if r.get("evening_note") and p.startswith("요금까지"):
+            continue                      # 저녁 안내에서 요금 이야기를 이미 함
+        lines.append(f"- {p}")
     return "\n".join(lines)
 
 
@@ -535,7 +542,8 @@ def _template(name: str, r: dict) -> str:
     if "error" in r:
         return f"- {r['error']}"
     if name == "recommend_actions":
-        return "\n".join(f"- {t}" for t in r["tips"]) + f"\n- 참고: {FACTS['jeju_new_tariff_plan']['text']}"
+        return ("\n".join(f"- {t}" for t in r["tips"] + r.get("participation", []))
+                + f"\n- 참고: {FACTS['jeju_new_tariff_plan']['text']}")
     if name == "forecast_surplus":
         lines = [f"- {d['date']}({d['weekday']}): {d['level']} · {d['likely_time_text']}"
                  + (" (날씨 미반영 참고치)" if d.get("basis", "").startswith("날씨 미반영") else
@@ -713,6 +721,8 @@ def _fallback(question: str, trace: list, history: list[str] | None = None, prof
         if key and key in seen and not line.startswith("  - "):   # 시간대 목록은 기기마다 보여 줌
             continue
         seen.add(key)
+        if line.startswith("- 요금까지 아끼려면") and (profile or {}).get("tou") == "가입":
+            line = "- 계시별 요금제에 가입하셨으니, 이 낮 시간(8~16시)에 쓰면 저녁(16~22시)보다 요금도 싸요."
         lines.append(line)
     parts = ["\n".join(lines)]
     if prev:

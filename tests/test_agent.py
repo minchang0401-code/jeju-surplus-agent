@@ -87,3 +87,15 @@ def test_llm_failure_falls_back_and_hides_key(monkeypatch):
 def test_tool_args_are_repaired():
     r = agent._run_tool("plan_appliance_use", {"target": "전기차", "car": "아이오닉5", "unknown_arg": 1})
     assert "error" not in r and r["appliance"] == "전기차"
+
+
+def test_time_answers_end_with_how_to_take_part():
+    """시간 추천 답 끝에 '실제로 참여하는 길'(요금제 확인 창구, 전기차는 플러스 DR)이 붙고, 요금제 가입자에게는 가입 권유 대신 이득을 말함."""
+    from agent import _fallback
+    ev = _fallback("전기차 언제 충전하는 게 좋아?", [])
+    assert "계시별 선택요금제" in ev and "123" in ev and "플러스 DR" in ev and "확인" in ev
+    wash = _fallback("토요일에 세탁기 언제 돌려?", [])
+    assert "요금까지 아끼려면" in wash and "플러스 DR" not in wash
+    joined = _fallback("토요일에 세탁기 언제 돌려?", [], profile={"area": "", "car": "", "work_start": None,
+                                                              "work_end": None, "tou": "가입"})
+    assert "가입하셨으니" in joined and "요금까지 아끼려면" not in joined

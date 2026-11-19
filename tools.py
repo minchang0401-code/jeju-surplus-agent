@@ -133,6 +133,18 @@ def forecast_surplus(days: int = 5, start: str | None = None) -> dict:
 
 
 # ---------------------------------------------------------------- ② 행동 추천
+def _participation(target: str) -> dict:
+    """시간 추천 끝에 붙이는 '실제 참여로 이어지는 길' 한 줄 (요금제·플러스 DR). 사실은 FACTS 에 있는 것만."""
+    lines = ["요금까지 아끼려면: 제주 가정은 주택용 계시별 선택요금제를 고를 수 있고, 이 요금제는 낮(8~16시)이 "
+             "저녁(16~22시)보다 싸요. 우리 집에 유리한지는 한전(국번 없이 123, 한전:ON)에 먼저 확인해 보세요."]
+    src = [FACTS["jeju_tou_tariff"]["source"]]
+    if target == "전기차":
+        lines.append("남을 때 쓰면 보상하는 '플러스 DR'도 제주가 2021년 전국 처음 도입했고, 공용 충전기로 참여하는 시범사업"
+                     "(앱 포인트 → 탐나는전)도 있었어요. 지금 개인이 참여할 수 있는지는 제주도·한전에 확인해 보세요.")
+        src.append(FACTS["jeju_plus_dr"]["source"])
+    return {"lines": lines, "sources": src}
+
+
 def recommend_actions(target: str = "가전", days: int = 5, day: str = "") -> dict:
     """day: 특정 날만 보고 싶을 때 요일('토') 또는 날짜('2026-11-21')."""
     fres = forecast_surplus(days)
@@ -166,9 +178,10 @@ def recommend_actions(target: str = "가전", days: int = 5, day: str = "") -> d
     else:
         tips.append("앞으로 며칠은 재생에너지가 남을 가능성이 낮아요. 이번에는 시간 이동 효과가 크지 않습니다.")
     tips.append("16~22시는 제주 계시별 요금의 최대부하 시간이라, 계시별 요금 가입 가구는 이 시간을 피하면 요금이 줄어요.")
-    return {"target": target, "day": day, "forecast_used": fc, "tips": tips,
+    part = _participation(target)
+    return {"target": target, "day": day, "forecast_used": fc, "tips": tips, "participation": part["lines"],
             "facts": [FACTS["jeju_tou_tariff"], FACTS["jeju_new_tariff_plan"]],
-            "sources": fres["sources"] + [FACTS["jeju_tou_tariff"]["source"]]}
+            "sources": fres["sources"] + [s for s in part["sources"] if s not in fres["sources"]]}
 
 
 # ---------------------------------------------------------------- ③ 충전소 찾기
@@ -801,6 +814,10 @@ def plan_appliance_use(appliance: str = "", day: str = "", start_hour: int | Non
         out["sources"].append(FACTS["jeju_tou_tariff"]["source"])
     out["forecast_range"] = f"{today} ~ {last}"
     out["sources"] += ["EPSIS 제주 시간별 SMP(학습 정답)", "기상청 단기예보"]
+    # 실제 참여로 이어지는 길 (요금제 · 전기차는 플러스 DR) — 답 끝에 한 줄
+    part = _participation("전기차" if key == "전기차" else "가전")
+    out["participation"] = part["lines"]
+    out["sources"] += [s for s in part["sources"] if s not in out["sources"]]
     return out
 
 
