@@ -243,13 +243,17 @@ $("gps").onclick = function () {
   navigator.geolocation.getCurrentPosition(function (pos) {
     const c = pos.coords;
     if (c.latitude < 33.0 || c.latitude > 34.2 || c.longitude < 126.0 || c.longitude > 127.1) {
-      useHome("지금 위치가 제주 밖이에요.");
+      // GPS는 잡혔지만 제주 밖(예: 육지에서 시연)일 때: 잡힌 것은 알려 주고, 충전소는 제주에만 있으니 저장한 동네로 보여 줌
+      const far = Math.round(km(c.latitude, c.longitude, 33.4996, 126.5312));
+      useHome("📍 GPS로 위치는 확인했어요. 지금은 제주에서 약 " + far + "km 떨어진 곳이에요(충전소 정보는 제주만 있어요).");
       return;
     }
     say("내 위치(정확도 약 " + Math.round(c.accuracy) + "m)를 기준으로 보여 드려요. 위치는 이 화면에서만 쓰고 저장하지 않아요.");
     showAt(c.latitude, c.longitude, "지금 내 위치", Math.min(c.accuracy, 2000), true);
   }, function (e) {
-    const why = e.code === 1 ? "위치 사용이 허용되지 않았어요." : (e.code === 3 ? "위치 확인이 오래 걸려요." : "위치를 확인할 수 없어요.");
+    const why = e.code === 1 ? "위치 사용이 허용되지 않았어요(주소창 왼쪽 아이콘 → 위치 → 허용)."
+      : (e.code === 3 ? "위치 확인이 오래 걸려요."
+      : "위치를 확인할 수 없어요(컴퓨터의 위치 서비스가 꺼져 있을 수 있어요).");
     useHome(why);
   }, {enableHighAccuracy: true, timeout: 10000, maximumAge: 60000});
 };
