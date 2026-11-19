@@ -229,7 +229,7 @@ def build_future_frame(start: str, days: int, history: pd.DataFrame) -> pd.DataF
     mid = []
     f = _read(FORECAST_HOURLY_CSV)
     if f is not None and {"w_sky", "w_rain", "w_ta"} <= set(f.columns):
-        mid.append(mid_summary(f))
+        mid.append(mid_summary(f, min_pm_hours=2))   # 3일 뒤(글피)는 단기예보가 3시간 간격이라 오후 2개 시각만 있어도 씀
     m = _read(FORECAST_MID_CSV)
     if m is not None and set(MID_FEATURES) <= set(m.columns):
         mid.append(m[["date"] + MID_FEATURES])
