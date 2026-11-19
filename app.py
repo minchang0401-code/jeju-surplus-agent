@@ -10,6 +10,9 @@ import pandas as pd
 import streamlit as st
 
 from agent import ask, llm_status
+from calendar_link import google_url, ics_bytes, pick_window
+from tools import PLACE_COORDS
+import user_profile as up
 from collect_weather import refresh_forecast_if_stale
 from tools import data_status, explain_surplus, forecast_surplus, map_points
 
@@ -44,6 +47,14 @@ if fresh["status"] == "failed":
 status = data_status()
 if status["mode"].startswith("저장"):
     st.info(f"실시간 예보가 연결되지 않아 저장된 데이터로 안내합니다. ({status['mode']})")
+
+# ---------------------------------------------------------------- 내 정보 (주소창에 담아 즐겨찾기로 다시 불러옴)
+if "profile" not in st.session_state:
+    try:
+        st.session_state.profile = up.from_query({k: st.query_params.get(k) for k in ("area", "car", "ws", "we", "tou")})
+    except Exception:
+        st.session_state.profile = up.empty()
+profile = st.session_state.profile
 
 # ---------------------------------------------------------------- 5일 예보 달력
 COLORS = {"높음": "#ffd166", "보통": "#cdeac0", "낮음": "#e9ecef"}
@@ -98,15 +109,23 @@ question = st.chat_input("궁금한 것을 물어보세요 (예: 토요일에 �
 if question:
     with st.spinner("데이터를 확인하고 있어요..."):
         # 앞 질문·답변을 함께 넘겨 이어지는 질문과 '지금까지 정리해줘'를 이해
-        res = ask(question, [(q, r["answer"]) for q, r in st.session_state.history])
+        res = ask(question, [(q, r["answer"]) for q, r in st.session_state.history], profile)
     st.session_state.history.append((question, res))
 
-for q, res in st.session_state.history:
+for i, (q, res) in enumerate(st.session_state.history):
     with st.chat_message("user"):
         st.write(q)
     with st.chat_message("assistant"):
         # 마크다운에서 '~' 두 개가 취소선으로 바뀌는 것을 막음
         st.markdown(res["answer"].replace("~", "～"))
+        # 추천 시간대를 휴대폰 캘린더에 넣기 (10분 전 알림)
+        win = pick_window(res["trace"])
+        if win:
+            st.caption(f"📅 {win['date'][5:].replace('-', '/')} {win['time_text']} — 캘린더에 넣으면 10분 전에 알려 줘요")
+            c1, c2 = st.columns(2)
+            c1.link_button("구글 캘린더에 넣기", google_url(win), use_container_width=True)
+            c2.download_button("아이폰·아웃룩 (.ics)", ics_bytes(win), file_name=f"jeju_surplus_{win['date']}.ics",
+                               mime="text/calendar", key=f"ics_{i}", use_container_width=True)
         with st.expander("근거 보기 (사용한 도구와 데이터)"):
             st.caption("응답 방식: " + ("AI(LLM)" if res["mode"] == "llm" else "규칙 기반(비상 모드)"))
             for t in res["trace"]:
@@ -156,6 +175,38 @@ for q, res in st.session_state.history:
                 st.caption("출처: " + ", ".join(map(str, r.get("sources", []))))
 
 with st.sidebar:
+    with st.expander("👤 내 정보 (한 번 넣으면 질문마다 반영)", expanded=not up.is_set(profile)):
+        places = ["선택 안 함"] + [p for p in PLACE_COORDS if p not in ("공항", "시청", "터미널", "도청")]
+        cars = list(up.CARS)
+        with st.form("profile_form"):
+            area = st.selectbox("사는 동네", places, index=places.index(profile["area"]) if profile["area"] in places else 0)
+            car_label = next((k for k, v in up.CARS.items() if v == profile["car"]), cars[0])
+            car = st.selectbox("전기차", cars, index=cars.index(car_label))
+            work = st.checkbox("평일에 출근해요", value=profile["work_start"] is not None)
+            hrs = list(range(0, 25))
+            cs, ce = st.columns(2)
+            ws = cs.selectbox("나가는 시각", hrs, index=profile["work_start"] if profile["work_start"] is not None else 9,
+                              format_func=lambda h: f"{h}시")
+            we = ce.selectbox("돌아오는 시각", hrs, index=profile["work_end"] if profile["work_end"] is not None else 18,
+                              format_func=lambda h: f"{h}시")
+            tou = st.radio("계시별(시간대별) 요금제", up.TOU, index=up.TOU.index(profile["tou"]), horizontal=True)
+            if st.form_submit_button("저장", use_container_width=True):
+                new = up.empty()
+                new["area"] = "" if area == "선택 안 함" else area
+                new["car"] = up.CARS[car]
+                if work and ws < we:
+                    new["work_start"], new["work_end"] = int(ws), int(we)
+                new["tou"] = tou
+                st.session_state.profile = new
+                try:
+                    st.query_params.from_dict(up.to_query(new))
+                except Exception:
+                    pass
+                st.rerun()
+        if up.is_set(profile):
+            st.caption("저장됨: " + up.summary(profile))
+            st.caption("이 페이지 주소를 즐겨찾기하면 다음에도 내 정보가 그대로 불러와져요. "
+                       "이름·연락처는 받지 않아요.")
     st.subheader("데이터 상태")
     for k, v in status["available"].items():
         st.write(("✅ " if v else "⬜ ") + k)

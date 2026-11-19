@@ -90,6 +90,9 @@ def _cases() -> list[dict]:
         {"id": "A06", "group": "기기", "turns": ["9시 출근 6시 퇴근인데 전기차는 언제 충전하는 게 좋아?"],
          "tools": ["plan_appliance_use"], "must_any": ["회사", "근처", "직장"], "must_not": ASK_KWH,
          "note": "출근 일정 반영 (팀원 C 방식)"},
+        {"id": "P01", "group": "내 정보", "turns": ["충전소 어디 있어?"],
+         "profile": {"area": "노형", "car": "아이오닉5", "work_start": 9, "work_end": 18, "tou": "모름"},
+         "tools": ["find_chargers"], "must_any": ["노형", "수덕"], "note": "저장한 동네로 충전소 찾기"},
         {"id": "G01", "group": "설명", "turns": ["제주에서 버려지는 재생에너지가 얼마나 돼?"],
          "tools": ["grid_records"], "must_any": ["MWh", "출력제어"], "note": "출력제어 기록 (팀원 B 데이터)"},
         {"id": "C04", "group": "대화", "turns": ["보일러 언제 틀면 좋아?", "기름 보일러야"],
@@ -137,7 +140,7 @@ def main() -> None:
         res = None
         for q in case["turns"]:
             for attempt in range(2):
-                res = ask(q, history)
+                res = ask(q, history, case.get("profile"))
                 err = next((t["result"].get("error", "") for t in res["trace"] if t["tool"] == "llm_error"), "")
                 if res["mode"] == "llm" or "429" not in err or attempt == 1:
                     break

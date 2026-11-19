@@ -61,9 +61,13 @@
 | requests | API 호출 | Apache-2.0 |
 | Streamlit | 웹 화면 | Apache-2.0 |
 | matplotlib | 그림 그리기 (`experiments/`, 선택) | Matplotlib License (PSF 기반) |
+| pytest | 자동 시험 (`tests/`, 선택) | MIT |
+| 지도 배경 (Streamlit `st.map`) | 화면 지도 | 배경 지도 © OpenStreetMap contributors, © CARTO (화면에 표시됨) |
+| 카카오맵 링크 | 충전소 위치 열기 (링크만 만듦, API 호출 없음) | 카카오맵 이용약관에 따름 |
+| 구글 캘린더 링크·iCalendar(.ics) | 추천 시간대를 사용자 캘린더에 저장 (링크·파일만 만듦, API 호출·키 없음) | iCalendar는 공개 표준(RFC 5545) |
 
 - 정확한 버전 범위는 `requirements.txt`, 실제 시험한 버전은 `requirements-tested.txt`에 있습니다.
-- 위 라이브러리 외에 외부 코드를 그대로 가져와 쓰지 않았습니다.
+- 위 라이브러리 외에 외부 코드를 그대로 가져와 쓰지 않았습니다. 팀원 에이전트에서 가져온 자료와 방식은 6장에 적었습니다.
 
 ## 6. 팀원 코드·자료 활용
 같은 팀원이 만든 에이전트 두 개의 장점을 합쳤습니다 (팀원 동의함).
@@ -73,3 +77,4 @@
 | 지도 표시 아이디어 | 팀원 B `dashboard/index.html` | `app.py` '지도로 보기' (Streamlit `st.map`, 코드는 새로 작성) |
 | 시간 제약 안에서 계획하기 | 팀원 C `TIMEFLOW_JEJU_MVP/timeflow/optimizer.py` | `tools.plan_appliance_use`의 출근·외출 일정 반영 (코드는 새로 작성) |
 | 평가기준 대응표 형식 | 팀원 C `docs/EVALUATION_MAPPING.md` | `docs/evaluation_mapping.md` |
+| pytest 자동 시험 방식 | 팀원 C `tests/`, `pytest.ini` | `tests/` (시험 내용은 새로 작성) |

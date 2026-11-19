@@ -177,7 +177,8 @@ def collect_forecast(now: datetime | None = None) -> pd.DataFrame:
     for name, (nx, ny) in KMA_FCST_GRIDS.items():
         params = {"serviceKey": key, "pageNo": 1, "numOfRows": 1500, "dataType": "JSON",
                   "base_date": base_date, "base_time": base_time, "nx": nx, "ny": ny}
-        r = requests.get(FCST_URL, params=params, timeout=60)
+        # 화면을 여는 중에 부르므로 오래 기다리지 않음 (연결 5초, 응답 20초). 실패하면 저장된 예보로 안내
+        r = requests.get(FCST_URL, params=params, timeout=(5, 20))
         if r.status_code != 200:   # 오류 메시지에 주소(인증키 포함)를 넣지 않음
             raise RuntimeError(f"단기예보 응답 {r.status_code}: {r.text[:200]}")
         try:

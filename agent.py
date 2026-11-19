@@ -21,9 +21,10 @@ import requests
 
 from config import DEFAULT_LLM, MAX_HORIZON_DAYS, get_key
 from facts import FACTS, SAFETY_RULES
+from user_profile import apply_defaults, to_prompt
 from tools import TOOL_SPECS, TOOLS
 
-def _system_prompt() -> str:
+def _system_prompt(profile: dict | None = None) -> str:
     """질문할 때마다 오늘 날짜·이번 주/다음 주 범위를 새로 넣음 (서버가 며칠씩 켜져 있어도 날짜가 맞도록)."""
     now = datetime.now()
     today = now.date()
@@ -72,7 +73,7 @@ def _system_prompt() -> str:
 {chr(10).join('  - ' + f['text'] for f in FACTS.values())}
 - 주의:
 {chr(10).join('  - ' + r for r in SAFETY_RULES)}
-"""
+""" + to_prompt(profile)
 
 
 # ---------------------------------------------------------------- LLM 연결
@@ -149,9 +150,9 @@ def _history_msgs(history: list | None) -> list[dict]:
     return msgs
 
 
-def _chat_openai(cfg: dict, question: str, trace: list, history: list | None = None) -> str:
+def _chat_openai(cfg: dict, question: str, trace: list, history: list | None = None, profile: dict | None = None) -> str:
     tools = [{"type": "function", "function": t} for t in TOOL_SPECS]
-    msgs = ([{"role": "system", "content": _system_prompt()}] + _history_msgs(history)
+    msgs = ([{"role": "system", "content": _system_prompt(profile)}] + _history_msgs(history)
             + [{"role": "user", "content": question}])
     for _ in range(6):
         r = _post_retry(f"{cfg['base_url']}/chat/completions",
@@ -171,14 +172,14 @@ def _chat_openai(cfg: dict, question: str, trace: list, history: list | None = N
     return "질문을 처리하는 데 단계가 너무 많이 필요했어요. 조금 더 짧게 물어봐 주세요."
 
 
-def _chat_anthropic(cfg: dict, question: str, trace: list, history: list | None = None) -> str:
+def _chat_anthropic(cfg: dict, question: str, trace: list, history: list | None = None, profile: dict | None = None) -> str:
     tools = [{"name": t["name"], "description": t["description"], "input_schema": t["parameters"]}
              for t in TOOL_SPECS]
     msgs = _history_msgs(history) + [{"role": "user", "content": question}]
     headers = {"x-api-key": cfg["key"], "anthropic-version": "2023-06-01"}
     for _ in range(6):
         r = _post_retry(f"{cfg['base_url']}/messages", headers=headers,
-                        json={"model": cfg["model"], "max_tokens": 1200, "system": _system_prompt(),
+                        json={"model": cfg["model"], "max_tokens": 1200, "system": _system_prompt(profile),
                               "tools": tools, "messages": msgs})
         body = r.json()
         uses = [b for b in body["content"] if b["type"] == "tool_use"]
@@ -476,7 +477,7 @@ def _plan_text(r: dict) -> str:
         return "\n".join(lines)
     sc = r.get("schedule")
     if sc:
-        lines.append(f"- 집에 없는 시간 {sc['away']}을 반영했어요. {sc['note']}")
+        lines.append(f"- 집에 없는 시간을 반영했어요({sc['away']}). {sc['note']}")
         if name == "전기차":
             for label, ws in (("밖에 있는 동안 (회사·목적지 근처 충전소)", sc.get("while_away")), ("집에 있을 때", sc.get("at_home"))):
                 if ws:
@@ -665,9 +666,11 @@ def _with_context(question: str, history: list[str] | None) -> tuple[str, str]:
     return question, ""
 
 
-def _fallback(question: str, trace: list, history: list[str] | None = None) -> str:
+def _fallback(question: str, trace: list, history: list[str] | None = None, profile: dict | None = None) -> str:
     routed, prev = _with_context(question, history)
-    steps = _route(routed)
+    raw = _route(routed)
+    steps = apply_defaults(raw, routed, profile)
+    used_profile = steps != raw
     if prev and steps:
         trace.append({"tool": "context", "args": {"앞 질문": prev}, "result": {"note": f"앞 질문에 이어서 이해: {routed}"}})
     if not steps:
@@ -689,14 +692,18 @@ def _fallback(question: str, trace: list, history: list[str] | None = None) -> s
     parts = ["\n".join(lines)]
     if prev:
         parts.insert(0, f"(앞 질문 '{prev}'에 이어서 답할게요)")
+    if used_profile:
+        from user_profile import summary
+        parts.insert(0, f"(저장한 내 정보 기준: {summary(profile)})")
     sources = sorted({s for t in trace for s in t["result"].get("sources", []) if isinstance(s, str)})
     return "\n".join(parts) + (f"\n\n출처: {', '.join(sources)}" if sources else "")
 
 
 # ---------------------------------------------------------------- 공개 함수
-def ask(question: str, history: list | None = None) -> dict:
+def ask(question: str, history: list | None = None, profile: dict | None = None) -> dict:
     """history: 같은 대화의 앞 질문들(오래된 것부터). 각 항목은 질문 문자열 또는 (질문, 답변).
     LLM 에는 앞 질문·답변을 대화로 넘기고, 비상 모드는 앞 질문의 주제만 이어 받음.
+    profile: 화면에서 저장한 내 정보(동네·차종·출퇴근·요금제). 질문에 없는 값의 기본값으로 씀.
     반환: {'answer': 답변, 'trace': 부른 도구와 결과, 'mode': 'llm' 또는 'fallback'}"""
     trace: list = []
     pairs = [(h, None) if isinstance(h, str) else (h[0], h[1]) for h in (history or [])]
@@ -704,13 +711,13 @@ def ask(question: str, history: list | None = None) -> dict:
     if cfg:
         try:
             fn = _chat_anthropic if cfg["provider"] == "anthropic" else _chat_openai
-            return {"answer": fn(cfg, question, trace, pairs), "trace": trace, "mode": "llm"}
+            return {"answer": fn(cfg, question, trace, pairs, profile), "trace": trace, "mode": "llm"}
         except Exception as e:
             msg = str(e) if isinstance(e, LLMError) else f"{type(e).__name__}: {str(e)[:200]}"
             if cfg.get("key"):
                 msg = msg.replace(cfg["key"], "***")   # 혹시 키가 섞여 나와도 가림
             trace.append({"tool": "llm_error", "args": {}, "result": {"error": msg}})
-    return {"answer": _fallback(question, trace, [q for q, _ in pairs]), "trace": trace, "mode": "fallback"}
+    return {"answer": _fallback(question, trace, [q for q, _ in pairs], profile), "trace": trace, "mode": "fallback"}
 
 
 if __name__ == "__main__":
