@@ -60,6 +60,11 @@ h1 { font-size: 1.55rem !important; margin: 0 !important; padding: 0 !important;
 .win { display:inline-block; margin:2px 6px 2px 0; padding:4px 10px; border-radius:999px; background:#dff1e8;
        color:#0d6b44; font-weight:700; font-size:.85rem; }
 .panel-title { font-weight:800; font-size:1.05rem; margin-bottom:.2rem; }
+.mapnote { background:#f6f8fb; border:1px solid #dfe6ef; border-radius:10px; padding:.4rem .7rem; margin:.1rem 0 .4rem;
+           font-size:.86rem; line-height:1.45; color:#1b1b1b; }
+.mapnote .dot { display:inline-block; width:.8rem; height:.8rem; border-radius:50%; margin-right:.35rem; vertical-align:-1px;
+                border:1px solid #fff; box-shadow:0 0 0 1px #c9d2db; }
+.mapnote .mn-sub { color:#52514e; }
 .legend-row { font-size:.78rem; color:#5b6b66; }
 div[data-testid="stChatMessage"] { padding: .4rem .5rem; }
 </style>""", unsafe_allow_html=True)
@@ -162,6 +167,15 @@ with left:
     if mode == MODES[0] and cur is not None:
         # ---- 잉여 예보 지도: 권역 원(크기 = 재생에너지 설비, 색 = 선택 시각 잉여 가능성) + 급속 충전소 + 풍력발전소
         reg = _regions().copy()
+        # 제주는 전력망(계통)이 하나라 잉여(SMP 0원 이하)도 섬 전체에서 같은 시각에 생김 → 색은 섬 전체 예보 한 값.
+        # 지역별 예보로 오해하지 않도록 지도 위에 분명히 적음
+        _c = prob_color(cur["prob"])
+        st.markdown(
+            f"<div class='mapnote'><span class='dot' style='background:rgb({_c[0]},{_c[1]},{_c[2]})'></span>"
+            f"<b>{sel} · 섬 전체 잉여 가능성 {cur['pct']:.0f}% ({cur['level']})</b>"
+            "<span class='mn-sub'> — 제주는 전력망이 하나라 남는 전기도 섬 전체에서 같은 시각에 생겨요. "
+            "그래서 원 색은 모두 같고, <b>원 크기</b>가 권역별 재생에너지 설비(어디서 전기를 많이 만드는지)를 보여 줘요.</span></div>",
+            unsafe_allow_html=True)
         reg["radius"] = 900 + reg["total_mw"].clip(lower=0) ** 0.5 * 430
         reg["color"] = [prob_color(cur["prob"])] * len(reg)
         reg["tip"] = [f"<b>{n}</b><br>태양광 {s_:.0f}MW · 풍력 {w_:.0f}MW<br>{sel} 잉여 가능성 {cur['pct']:.0f}% (섬 전체)"
