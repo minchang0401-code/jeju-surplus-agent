@@ -145,8 +145,9 @@ function makeKakao() {
           const dot = (c, s) => new K.MarkerImage("data:image/svg+xml;charset=utf-8," + encodeURIComponent(
             '<svg xmlns="http://www.w3.org/2000/svg" width="' + s + '" height="' + s + '"><circle cx="' + s / 2 + '" cy="' + s / 2 +
             '" r="' + (s / 2 - 1.5) + '" fill="' + c + '" stroke="white" stroke-width="1.5"/></svg>'), new K.Size(s, s), {offset: new K.Point(s / 2, s / 2)});
-          const imgQ = dot("#2a78d6", 13), imgS = dot("#9a9a96", 11);
-          const cl = new K.MarkerClusterer({map: map, averageCenter: true, minLevel: 6, disableClickZoom: false});
+          const imgQ = dot("#2a78d6", MODE === "surplus" ? 8 : 13), imgS = dot("#9a9a96", 11);
+          // 잉여 예보 지도는 권역 원·이름표가 잘 보이도록 충전소를 묶지 않음(작은 점으로)
+          const cl = new K.MarkerClusterer({map: map, averageCenter: true, minLevel: MODE === "surplus" ? 15 : 6, disableClickZoom: false});
           const info = new K.InfoWindow({removable: true});
           const meOverlays = [];
           for (const g of R) {   // 잉여 예보 지도: 권역 원 (크기 = 재생에너지 설비, 색 = 섬 전체 잉여 가능성)
@@ -325,7 +326,9 @@ $("quick").onclick = function () {
 };
 
 // ---------- 시작: 카카오맵 → (실패) OpenStreetMap → (실패) 목록만
+// '잉여 예보'·'충전소 전체'는 제주 본섬에 맞춤 (추자도처럼 멀리 떨어진 점 때문에 섬이 작게 보이지 않게)
 function fitPoints() {
+  if (MODE === "all" || MODE === "surplus") return [[33.19, 126.15], [33.57, 126.97]];
   const pts = shown().map(p => [p[0], p[1]]);
   if (MODE === "all" || MODE === "surplus") for (const w of W) pts.push([w[0], w[1]]);
   for (const g of R) pts.push([g[0], g[1]]);

@@ -244,7 +244,7 @@ with left:
     box = "graphbox" if mode == MODES[1] else ("mapbox" if with_slider else "mapboxfull")
     with st.container(key=box):
         if mode == MODES[1] and cur is not None:
-            _hourly_chart(hourly, cur, wins, 250)
+            _hourly_chart(hourly, cur, wins, 300)
         elif mode == MODES[0] and cur is not None:
             # ---- 잉여 예보 지도: 권역 원(크기 = 재생에너지 설비, 색 = 선택 시각 잉여 가능성) + 급속 충전소 + 풍력발전소
             reg = _regions().copy()
@@ -302,8 +302,14 @@ with left:
             _html("<div class='reco'><b>추천 시간대(3시간)</b> " + "".join(f"<span class='win'>{v['text']} · {v['prob']:.0%}</span>" for v in wins)
                   + f"<span class='legend-row' title='{_src}'> ⓘ 출처·안내</span></div>")
         else:
-            _html("<div class='reco'><span class='legend-row'>앞으로 며칠은 재생에너지가 남을 가능성이 20%를 넘는 시간이 없어요.</span>"
-                  f"<span class='legend-row' title='{_src}'> ⓘ 출처·안내</span></div>")
+            # 3시간 연속으로는 20%를 못 넘어도, 한 시간이라도 넘는 때가 있으면 그 시간을 알려 줌 (카드·그래프와 어긋나지 않게)
+            one = best_windows(hourly, hours=1, top=3)
+            if one:
+                _html("<div class='reco'><b>가능성 있는 시간(짧음)</b> " + "".join(f"<span class='win'>{v['text']} · {v['prob']:.0%}</span>" for v in one)
+                      + f"<span class='legend-row' title='{_src}'> · 3시간 이어지는 때는 없어요 ⓘ 출처·안내</span></div>")
+            else:
+                _html("<div class='reco'><span class='legend-row'>앞으로 며칠은 재생에너지가 남을 가능성이 20%를 넘는 시간이 없어요.</span>"
+                      f"<span class='legend-row' title='{_src}'> ⓘ 출처·안내</span></div>")
 
 
 # ================================================================ 오른쪽: 에이전트 대화 패널
