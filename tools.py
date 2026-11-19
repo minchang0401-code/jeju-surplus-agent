@@ -333,6 +333,10 @@ def _period_text(rec: pd.DataFrame) -> str:
 
 
 # ---------------------------------------------------------------- ⑤ 원인 설명
+_SEASON = {12: "겨울", 1: "겨울", 2: "겨울", 3: "봄", 4: "봄", 5: "봄",
+           6: "여름", 7: "여름", 8: "여름", 9: "가을", 10: "가을", 11: "가을"}
+
+
 def explain_surplus() -> dict:
     lab = load_labels()
     day = lab.groupby("date")["is_surplus"].max()
@@ -345,6 +349,8 @@ def explain_surplus() -> dict:
         "surplus_day_rate_by_month": {int(k): v for k, v in month.items()},
         "surplus_hours_by_hour": {int(k): int(v) for k, v in hour.items()},
         "surplus_day_rate_by_weekday": {WEEKDAYS[int(k)]: v for k, v in dow.items()},
+        # 계절을 잘못 붙이지 않도록 달마다 계절을 함께 줌 (예: 11월은 가을)
+        "top_months_with_season": [f"{int(m)}월({_SEASON[int(m)]}) {v:.0%}" for m, v in month.sort_values(ascending=False).head(4).items()],
         "definition": FACTS["surplus_definition"]["text"],
         "sources": ["EPSIS 제주 시간별 SMP"],
     }
