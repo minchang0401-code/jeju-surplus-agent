@@ -97,7 +97,7 @@ header[data-testid="stHeader"] { height: 2.4rem; background: var(--header); }
 .st-key-quickq button p { color: var(--ink); }
 .st-key-quickq button p { font-size: .74rem; }
 .st-key-sidepanel [data-testid="stHorizontalBlock"] { gap: .35rem; }
-[data-testid="stLayoutWrapper"]:has(> .st-key-chatbox), .st-key-chatbox { flex: 0 0 calc(100vh - 33.5rem) !important; height: calc(100vh - 33.5rem) !important; min-height: 200px; }
+[data-testid="stLayoutWrapper"]:has(> .st-key-chatbox), .st-key-chatbox { flex: 0 0 calc(100vh - 33.5rem) !important; height: calc(100vh - 33.5rem) !important; min-height: 120px; }
 .st-key-sidepanel [data-testid="stChatInput"] textarea { font-size: .82rem; }
 h1 { font-size: 1.55rem !important; margin: 0 !important; padding: 0 !important; }
 .sub { color: var(--ink2); font-size: .9rem; margin-top: .1rem; }
