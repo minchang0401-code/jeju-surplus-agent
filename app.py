@@ -35,9 +35,13 @@ st.set_page_config(page_title="제주 잉여전력 도우미", page_icon="⚡", 
 st.markdown("""<style>
 /* 한 화면(스크롤 없이)에 맞추기: 지도 높이 = 화면 높이 - 나머지(머리말·카드·버튼·그래프) → 화면이 크면 지도도 커짐 */
 :root { --map-h: clamp(220px, calc(100vh - 300px), 700px); }
-.st-key-mapbox iframe { height: var(--map-h) !important; }
-.st-key-mapboxfull iframe { height: calc(var(--map-h) + 54px) !important; }   /* 시각 슬라이더가 없는 지도는 그만큼 더 크게 */
-.st-key-mapbox [data-testid="stDeckGlJsonChart"], .st-key-mapbox [data-testid="stDeckGlJsonChart"] > div { height: var(--map-h) !important; }
+/* 지도 칸 자체의 높이를 정하고(넘치면 잘라서 아래 글과 겹치지 않게) 안의 지도는 그 칸을 꽉 채움 */
+.st-key-mapbox { height: var(--map-h) !important; min-height: var(--map-h); overflow: hidden; flex: 0 0 auto !important; }
+.st-key-mapboxfull { height: calc(var(--map-h) + 54px) !important; min-height: calc(var(--map-h) + 54px); overflow: hidden; flex: 0 0 auto !important; }
+.st-key-mapbox [data-testid="stElementContainer"], .st-key-mapboxfull [data-testid="stElementContainer"],
+.st-key-mapbox [data-testid="stIFrame"], .st-key-mapboxfull [data-testid="stIFrame"] { height: 100% !important; }
+.st-key-mapbox iframe, .st-key-mapboxfull iframe { height: 100% !important; display: block; }   /* 시각 슬라이더가 없는 지도는 54px 더 크게 */
+
 [data-testid="stColumn"]:has(.days) [data-testid="stVerticalBlock"] { gap: .5rem; }
 [data-testid="stColumn"]:has(.days) [data-testid="stHorizontalBlock"] { align-items: center; }
 [data-testid="stColumn"]:has(.days) [data-testid="stVegaLiteChart"] { margin-top: -.3rem; }
@@ -52,7 +56,7 @@ header[data-testid="stHeader"] { height: 2.4rem; background: rgba(255,255,255,.8
 .st-key-myinfo button { justify-content: flex-start; background: #f4f8ff; border-color: #c9dbf5; }
 .st-key-myinfo button p { white-space: normal; text-align: left; font-weight: 600; color: #1f4f8f; }
 .st-key-sidepanel [data-testid="stHorizontalBlock"] { gap: .35rem; }
-[data-testid="stLayoutWrapper"]:has(> .st-key-chatbox), .st-key-chatbox { flex: 0 0 calc(100vh - 18.9rem) !important; height: calc(100vh - 18.9rem) !important; min-height: 240px; }
+[data-testid="stLayoutWrapper"]:has(> .st-key-chatbox), .st-key-chatbox { flex: 0 0 calc(100vh - 23rem) !important; height: calc(100vh - 23rem) !important; min-height: 200px; }
 .st-key-sidepanel [data-testid="stChatInput"] textarea { font-size: .82rem; }
 h1 { font-size: 1.55rem !important; margin: 0 !important; padding: 0 !important; }
 .sub { color: #5b6b66; font-size: .9rem; margin-top: .1rem; }
@@ -237,7 +241,8 @@ with left:
             _html("<div class='mapnote'>🔌 제주 공용 충전소 전체와 풍력발전소 · 점을 누르면 길찾기</div>")
 
     with_slider = mode in MODES[:2] and cur is not None
-    with st.container(key="mapbox" if with_slider else "mapboxfull"):
+    box = "graphbox" if mode == MODES[1] else ("mapbox" if with_slider else "mapboxfull")
+    with st.container(key=box):
         if mode == MODES[1] and cur is not None:
             _hourly_chart(hourly, cur, wins, 250)
         elif mode == MODES[0] and cur is not None:
