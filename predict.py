@@ -3,7 +3,8 @@
     python predict.py --start 2026-11-18 --days 5
 
 - 단기예보 파일(data/forecast_jeju_hourly.csv)이 있는 날짜는 날씨 모델(full)로,
-  없는 날짜는 1차 모델(calendar)로 예측하고, 어느 모델을 썼는지 함께 돌려줍니다.
+  단기예보가 없고 중기예보(data/forecast_mid_daily.csv)가 있는 날짜는 중기 모델(mid)로,
+  둘 다 없는 날짜는 1차 모델(calendar)로 예측하고, 어느 모델을 썼는지 함께 돌려줍니다.
 - 예측 결과는 data/forecast_log.csv 에 쌓아 두었다가 나중에 실제와 비교합니다.
 """
 from __future__ import annotations
@@ -60,6 +61,13 @@ def forecast(start: str | None = None, days: int = MAX_HORIZON_DAYS, log: bool =
             frame.loc[has_weather, "prob"] = bundle["models"]["full"].predict_proba(
                 frame.loc[has_weather, feats])[:, 1]
             frame.loc[has_weather, "model_used"] = "full"
+    if "mid" in bundle["models"]:
+        # 단기예보가 없는 3~5일 뒤: 중기예보(오후 하늘·오후 비·최고기온)가 있으면 중기 모델로
+        feats = bundle["feature_sets"]["mid"]
+        has_mid = (frame["model_used"] == "calendar") & frame[[c for c in feats if c.startswith("mid_")]].notna().all(axis=1)
+        if has_mid.any():
+            frame.loc[has_mid, "prob"] = bundle["models"]["mid"].predict_proba(frame.loc[has_mid, feats])[:, 1]
+            frame.loc[has_mid, "model_used"] = "mid"
     frame["level"] = frame["prob"].map(level_of)
     out = frame[["date", "hour", "prob", "level", "model_used"]].copy()
     if log:

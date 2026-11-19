@@ -451,5 +451,8 @@ with st.sidebar:
         st.write(("✅ " if v else "⬜ ") + k)
     st.caption("허브 = 제주데이터허브 (대회 필수 데이터)")
     st.caption(("🟢 " if _ls["on"] else "⚪ ") + _ls["text"])
+    _mid = {"fresh": "받음", "updated": "방금 새로 받음", "failed": "받지 못함 → 3~5일 뒤는 참고치", "no_key": "키 없음"}
+    if fresh.get("mid"):
+        st.caption("기상청 중기예보(3~5일 뒤): " + _mid.get(fresh["mid"], fresh["mid"]))
     if fresh.get("issued_at"):
         st.caption(f"기상청 단기예보 발표: {fresh['issued_at']}" + (" (방금 새로 받음)" if fresh["status"] == "updated" else ""))

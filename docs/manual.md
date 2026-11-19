@@ -48,7 +48,7 @@ LLM_MODEL=                  # 비우면 gemini-3.5-flash-lite
 | 키 | 발급 방법 | 걸리는 시간 |
 |---|---|---|
 | **Gemini API 키** (`LLM_API_KEY`) | https://aistudio.google.com 에 구글 계정으로 로그인 → 왼쪽 아래 열쇠 아이콘(API keys) → **API 키 만들기** → 복사. 결제 등록 없이 무료 등급(하루 500회) | 1분 |
-| 공공데이터포털 일반 인증키 (`DATA_GO_KR_KEY`) | https://www.data.go.kr 회원가입 → 「기상청_단기예보 조회서비스」(15084084) **활용신청** → 마이페이지 → 개인 API 인증키에서 **인증키 복사(Decoding)** | 승인 즉시~1시간 |
+| 공공데이터포털 일반 인증키 (`DATA_GO_KR_KEY`) | https://www.data.go.kr 회원가입 → 「기상청_단기예보 조회서비스」(15084084)와 「기상청_중기예보 조회서비스」를 각각 **활용신청** → 마이페이지 → 개인 API 인증키에서 **인증키 복사(Decoding)**. 키는 하나로 둘 다 씁니다. 중기예보를 신청하지 않으면 3~5일 뒤는 날씨 없는 참고치로 나옵니다 | 승인 즉시~1시간 |
 | 기상청 API허브 인증키 (`KMA_APIHUB_KEY`) | https://apihub.kma.go.kr 회원가입 → 지상관측 **ASOS 시간자료** 활용신청 → 마이페이지에서 인증키 복사 | 승인 즉시 |
 | (선택) 카카오맵 JavaScript 키 (`KAKAO_JS_KEY`) | https://developers.kakao.com → 내 애플리케이션 → 애플리케이션 추가 → **앱 키의 JavaScript 키** 복사 → 플랫폼 → **Web 사이트 도메인**에 앱 주소(예: `http://localhost:8501`, 배포 주소) 등록 → 카카오맵 사용 설정 켜기. 없으면 '내 주변' 지도가 OpenStreetMap으로 나옴 | 10분 |
 | 제주데이터허브 프로젝트키 (`JEJU_DATAHUB_PROJECT_KEY`) | https://jejudatahub.net 회원가입 → 프로젝트 만들기 → 데이터 579·862·1225·1226을 프로젝트에 추가 → 프로젝트키 복사 | 즉시 |
@@ -76,8 +76,9 @@ pip install -r requirements.txt
 | 4 | `python collect_weather.py history` | `data/weather_jeju_hourly.csv` (과거 관측) | 수 분 |
 | 5 | `python train.py` | `models/`, `reports/report.md`, `reports/metrics.json` | 1분 이내 |
 | 6 | `python collect_weather.py forecast` | `data/forecast_jeju_hourly.csv` (최신 단기예보) | 수 초 |
+| 6-1 | `python collect_weather.py mid` | `data/forecast_mid_daily.csv` (최신 중기예보, 4~10일 뒤) | 수 초 |
 | 7 | `python run_scenarios.py` | `reports/scenario_results.md` (시나리오 5개 + 질문 58개 + 이어지는 질문 8개 + 생활 언어 답변 10개) | 수 초 |
-| 7-1 | `pip install -r requirements-dev.txt` 후 `python -m pytest` | 자동 시험 132개 통과 여부 (키·인터넷 필요 없음) | 수 초 |
+| 7-1 | `pip install -r requirements-dev.txt` 후 `python -m pytest` | 자동 시험 133개 통과 여부 (키·인터넷 필요 없음) | 수 초 |
 | 8 | `python -m streamlit run app.py` | 브라우저에 화면 (http://localhost:8501) | — |
 
 - 1~5는 이미 결과가 들어 있으니 건너뛰어도 됩니다.
@@ -109,7 +110,7 @@ pip install -r requirements.txt
 | 한글이 깨짐 (그림) | 한글 글꼴(맑은 고딕·나눔고딕) 설치 |
 
 **제약사항**
-- 예보는 **오늘부터 5일 뒤까지**만 합니다. 날씨가 반영된 예보는 기상청 단기예보가 있는 2~3일이고, 나머지는 과거 패턴으로 본 참고치입니다.
+- 예보는 **오늘부터 5일 뒤까지**만 합니다. 1~2일 뒤는 기상청 단기예보, 3~5일 뒤는 기상청 중기예보(오후 하늘·비·최고기온만 있어 덜 정확)를 씁니다. 중기예보를 못 받으면 과거 패턴으로 본 참고치입니다.
 - 성능 수치는 관측 날씨 기준이라, 예보 날씨를 쓰는 실제 서비스에서는 낮을 수 있습니다(`docs/result_report.md` 8장).
 - 충전소의 실시간 빈자리·고장 여부는 알 수 없습니다(허브 862는 위치·설비 정보).
 - 일반(누진제) 가정은 쓰는 시간을 옮겨도 지금 당장 요금이 달라지지 않습니다.

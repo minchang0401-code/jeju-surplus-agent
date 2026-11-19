@@ -85,6 +85,10 @@ def main() -> None:
     feats = sets["full"]
     model = new_model().fit(train[feats], train["is_surplus"])   # 관측 날씨로 학습 (서비스와 같음)
     cal = new_model().fit(train[sets["calendar"]], train["is_surplus"])
+    midm = new_model().fit(train[sets["mid"]], train["is_surplus"]) if "mid" in sets else None
+    mid_rows = []
+    if midm is not None:
+        mid_rows.append(("중기 모델, 오차 없음", evaluate(y, midm.predict_proba(test[sets["mid"]])[:, 1], test, 0.2), None))
     thr = 0.2
     rows = [("관측 날씨 그대로 (오차 0, 지금까지 보고한 값)", evaluate(y, model.predict_proba(test[feats])[:, 1], test, thr), None)]
     rng = np.random.default_rng(2026)
@@ -95,11 +99,19 @@ def main() -> None:
             te = tb[tb["date"] >= TEST_START]
             assert (te["is_surplus"].to_numpy() == y).all()
             rs.append(evaluate(y, model.predict_proba(te[feats])[:, 1], te, thr))
+            if midm is not None and name.startswith("큼"):
+                mid_rs = locals().setdefault("mid_rs", [])
+                mid_rs.append(evaluate(y, midm.predict_proba(te[sets["mid"]])[:, 1], te, thr))
         mean = {k: float(np.mean([r[k] for r in rs])) for k in ("day_pr_auc", "hour_pr_auc", "day_precision", "day_recall")}
         rng_ = (min(r["day_pr_auc"] for r in rs), max(r["day_pr_auc"] for r in rs))
         rows.append((name, mean, rng_))
     rows.append(("날씨 없이 (달력·최근 경향만, 가장 나쁜 경우)", evaluate(y, cal.predict_proba(test[sets["calendar"]])[:, 1], test, thr), None))
 
+    if midm is not None and "mid_rs" in locals():
+        mr = locals()["mid_rs"]
+        mid_rows.append(("중기 모델, 오차 큼 (4~5일 뒤 수준)",
+                         {k: float(np.mean([r[k] for r in mr])) for k in ("day_pr_auc", "hour_pr_auc", "day_precision", "day_recall")},
+                         (min(r["day_pr_auc"] for r in mr), max(r["day_pr_auc"] for r in mr))))
     base = rows[0][1]["day_pr_auc"]
     lines = ["# 예보 날씨 오차 시험", "",
              f"- 시험 기간: {TEST_START} ~ {test['date'].max():%Y-%m-%d} (잉여일 {int(test.groupby('date')['is_surplus'].max().sum())}일)",
@@ -111,6 +123,13 @@ def main() -> None:
         rr = f" ({r[0]:.3f}~{r[1]:.3f})" if r else ""
         lines.append(f"| {name} | {m['day_pr_auc']:.3f}{rr} | {m['day_pr_auc'] / base:.0%} | {m['hour_pr_auc']:.3f} | "
                      f"{m['day_precision'] or 0:.3f} | {m['day_recall'] or 0:.3f} |")
+    if mid_rows:
+        lines += ["", "### 중기 모델 (3~5일 뒤용: 달력 + 오후 하늘 3단계·오후 비 여부·최고기온만 사용)", "",
+                  "| 넣은 날씨 | 날짜 PR-AUC | 시간 PR-AUC | 날짜 정밀도 | 날짜 재현율 |", "|---|---|---|---|---|"]
+        for name, m, r in mid_rows:
+            rr = f" ({r[0]:.3f}~{r[1]:.3f})" if r else ""
+            lines.append(f"| {name} | {m['day_pr_auc']:.3f}{rr} | {m['hour_pr_auc']:.3f} | {m['day_precision'] or 0:.3f} | "
+                         f"{m['day_recall'] or 0:.3f} |")
     lines += ["", "오차 단계 (하루 단위로 같은 방향으로 틀림)", "",
               "| 단계 | 기온 평균절대오차 | 풍속 오차(표준편차) | 하늘상태 한 단계 틀림 | 비 여부 틀림 |", "|---|---|---|---|---|"]
     for name, (t, ws, ps, pr) in LEVELS.items():

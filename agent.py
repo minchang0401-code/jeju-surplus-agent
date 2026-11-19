@@ -45,6 +45,7 @@ def _system_prompt(profile: dict | None = None) -> str:
 - 도구 결과의 not_forecast 날짜는 "예보할 수 없다"고 먼저 말한다. past_surplus_day_rate_same_month 는
   '과거 같은 달 기록(참고)'이라고 밝힐 때만 쓰고, 그 날짜의 예보처럼 말하지 않는다.
 - basis 가 '날씨 미반영'인 날은 '날씨 예보가 아직 없어 과거 패턴으로 본 참고치'라고 밝힌다.
+- basis 가 '중기예보 반영'인 날(3~5일 뒤)은 '기상청 중기예보(오후 하늘·비)로 본 거친 예보라 단기예보보다 덜 정확하다'고 짧게 밝힌다.
 - "지금까지 대화 정리해줘", "방금 말한 거 다시 설명해줘"처럼 앞 대화에 대한 요청은 도구 없이 앞 대화 내용으로 답한다.
 - 질문이 도구로 답할 수 없는 내용(잉여전력·전기 사용 시간·충전소와 관계없는 질문)이면 도구를 억지로 부르지 말고,
   "제가 가진 데이터로는 답할 수 없어요"라고 말한 뒤 답할 수 있는 질문 예시 2~3개를 알려 준다.
@@ -521,7 +522,8 @@ def _plan_text(r: dict) -> str:
             verb = "충전하기" if name == "전기차" else ("틀기" if name in ("에어컨", "전기히터") else "돌리기")
             lines.append(f"- {name} {verb} 좋은 때 ({r['length_hours']}시간 연속):")
         for w in wins:
-            ref = " · 날씨 미반영 참고치" if w["basis"].startswith("날씨 미반영") else ""
+            ref = " · 날씨 미반영 참고치" if w["basis"].startswith("날씨 미반영") else \
+                (" · 중기예보 기준(거침)" if "중기예보" in w["basis"] else "")
             lines.append(f"  - {_day_text(w['date'], w['weekday'])} {w['time_text']} (가능성 {w['level']}{ref})")
     lines.append(f"- {r['how']}")
     if r.get("ask_user"):
@@ -536,7 +538,8 @@ def _template(name: str, r: dict) -> str:
         return "\n".join(f"- {t}" for t in r["tips"]) + f"\n- 참고: {FACTS['jeju_new_tariff_plan']['text']}"
     if name == "forecast_surplus":
         lines = [f"- {d['date']}({d['weekday']}): {d['level']} · {d['likely_time_text']}"
-                 + (" (날씨 미반영 참고치)" if d.get("basis", "").startswith("날씨 미반영") else "")
+                 + (" (날씨 미반영 참고치)" if d.get("basis", "").startswith("날씨 미반영") else
+                    (" (중기예보 기준, 거침)" if "중기예보" in d.get("basis", "") else ""))
                  for d in r["forecast"]]
         nf = r.get("not_forecast")
         if nf:

@@ -29,6 +29,7 @@ SURPLUS_THRESHOLD_WON = 0.0                             # 제주 SMP가 이 값 
 # ---------------------------------------------------------------- 날씨
 WEATHER_HOURLY_CSV = DATA / "weather_jeju_hourly.csv"     # 기상청 ASOS 시간자료 (학습용)
 FORECAST_HOURLY_CSV = DATA / "forecast_jeju_hourly.csv"   # 기상청 단기예보 (예측용)
+FORECAST_MID_CSV = DATA / "forecast_mid_daily.csv"         # 기상청 중기예보 (4~10일 뒤, 하루 단위)
 KMA_ASOS_STATIONS = {184: "제주", 185: "고산", 188: "성산", 189: "서귀포"}
 # 단기예보 격자 (제주시, 서귀포시). 기상청 「격자 위경도」 자료로 한 번 확인하세요.
 KMA_FCST_GRIDS = {"제주시": (53, 38), "서귀포시": (52, 33)}

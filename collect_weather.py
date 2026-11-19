@@ -9,6 +9,10 @@
      python collect_weather.py forecast
    → data/forecast_jeju_hourly.csv (위와 같은 열 + 하루 단위 열)
 
+3) 중기예보 (3~5일 뒤용): 공공데이터포털 「기상청_중기예보 조회서비스」 getMidLandFcst·getMidTa (제주도)
+     python collect_weather.py mid
+   → data/forecast_mid_daily.csv (date, mid_sky_pm, mid_rain_pm, mid_tmax ...)
+
 학습 변수와 예보 변수를 같은 형태로 맞춥니다.
   기온 w_ta / 풍속 w_ws / 하늘상태 w_sky(1맑음·3구름많음·4흐림) / 강수 여부 w_rain
   하늘상태는 관측 전운량(0~10)을 기상청 기준(0~5 맑음, 6~8 구름많음, 9~10 흐림)으로 바꿔 씁니다.
@@ -25,7 +29,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from config import (FORECAST_HOURLY_CSV, KMA_ASOS_STATIONS, KMA_FCST_GRIDS,
+from config import (FORECAST_HOURLY_CSV, FORECAST_MID_CSV, KMA_ASOS_STATIONS, KMA_FCST_GRIDS,
                     WEATHER_HOURLY_CSV, get_key)
 
 ASOS_URL = "https://apihub.kma.go.kr/api/typ01/url/kma_sfctm3.php"
@@ -33,6 +37,11 @@ ASOS_COLUMNS = {  # 열 번호(0부터): 이름
     0: "tm", 1: "stn", 3: "ws", 11: "ta", 13: "hm", 15: "rn", 25: "ca_tot", 33: "ss", 34: "si",
 }
 FCST_URL = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
+# 중기예보 (공공데이터포털 「기상청_중기예보 조회서비스」, 단기예보와 따로 활용신청 필요). 4~10일 뒤, 하루 2번(06·18시) 발표
+MID_LAND_URL = "https://apis.data.go.kr/1360000/MidFcstInfoService/getMidLandFcst"
+MID_TA_URL = "https://apis.data.go.kr/1360000/MidFcstInfoService/getMidTa"
+MID_LAND_REG = "11G00000"   # 육상예보 구역: 제주도
+MID_TA_REG = "11G00201"     # 기온예보 지점: 제주
 
 
 def sky_from_cloud(ca: pd.Series) -> pd.Series:
@@ -214,6 +223,75 @@ def collect_forecast(now: datetime | None = None) -> pd.DataFrame:
     return out[cols]
 
 
+def _mid_tmfc(now: datetime) -> str:
+    ref = now - timedelta(minutes=30)   # 발표 뒤 조금 지나야 조회됨
+    if ref.hour >= 18:
+        return ref.strftime("%Y%m%d") + "1800"
+    if ref.hour >= 6:
+        return ref.strftime("%Y%m%d") + "0600"
+    return (ref - timedelta(days=1)).strftime("%Y%m%d") + "1800"
+
+
+def _mid_item(url: str, key: str, reg: str, tmfc: str) -> dict:
+    params = {"serviceKey": key, "pageNo": 1, "numOfRows": 10, "dataType": "JSON", "regId": reg, "tmFc": tmfc}
+    r = requests.get(url, params=params, timeout=(5, 20))
+    if r.status_code != 200:
+        raise RuntimeError(f"중기예보 응답 {r.status_code}: {r.text[:200]}")
+    try:
+        return r.json()["response"]["body"]["items"]["item"][0]
+    except (ValueError, KeyError, IndexError) as e:   # 활용신청 전이면 XML 오류가 옴
+        raise RuntimeError(f"중기예보 응답을 읽지 못함(활용신청 여부 확인): {r.text[:200]}") from e
+
+
+def parse_mid(land: dict, ta: dict, tmfc: str) -> pd.DataFrame:
+    """중기예보 응답 → 날짜별 오후 하늘(1·3·4), 오후 비 여부, 최고기온 (학습 변수 mid_* 와 같은 모양)."""
+    base = datetime.strptime(tmfc[:8], "%Y%m%d")
+    rows = []
+    for n in range(3, 11):
+        wf = land.get(f"wf{n}Pm", land.get(f"wf{n}"))
+        rn = land.get(f"rnSt{n}Pm", land.get(f"rnSt{n}"))
+        tx = ta.get(f"taMax{n}")
+        if not wf or tx in (None, ""):
+            continue
+        wf = str(wf)
+        sky = 1.0 if wf.startswith("맑") else (4.0 if wf.startswith("흐") else 3.0)
+        try:
+            rain = float(float(rn) >= 60 or any(w in wf for w in ("비", "소나기", "눈")))
+        except (TypeError, ValueError):
+            rain = float(any(w in wf for w in ("비", "소나기", "눈")))
+        rows.append({"date": (base + timedelta(days=n)).strftime("%Y-%m-%d"), "mid_sky_pm": sky,
+                     "mid_rain_pm": rain, "mid_tmax": float(tx), "mid_wf_pm": wf, "mid_rain_prob_pm": rn, "base": tmfc})
+    return pd.DataFrame(rows)
+
+
+def collect_mid(now: datetime | None = None) -> pd.DataFrame:
+    key = get_key("DATA_GO_KR_KEY")
+    if not key:
+        raise RuntimeError("DATA_GO_KR_KEY 가 .env 에 없습니다.")
+    tmfc = _mid_tmfc(now or datetime.now())
+    out = parse_mid(_mid_item(MID_LAND_URL, key, MID_LAND_REG, tmfc), _mid_item(MID_TA_URL, key, MID_TA_REG, tmfc), tmfc)
+    if out.empty:
+        raise RuntimeError("중기예보에 쓸 날짜가 없습니다.")
+    out.to_csv(FORECAST_MID_CSV, index=False, encoding="utf-8-sig")
+    print(f"저장: {FORECAST_MID_CSV} (발표 {tmfc}, {len(out)}일)")
+    return out
+
+
+def refresh_mid_if_stale(max_age_hours: float = 12.0) -> str:
+    """중기예보는 하루 2번 발표. 오래됐으면 새로 받음. 실패해도 예외 없이 상태만 돌려줌(그 날짜는 달력 모델로)."""
+    try:
+        if FORECAST_MID_CSV.exists():
+            base = str(pd.read_csv(FORECAST_MID_CSV, usecols=["base"], dtype=str)["base"].iloc[0])
+            if (datetime.now() - datetime.strptime(base[:12], "%Y%m%d%H%M")).total_seconds() / 3600 < max_age_hours:
+                return "fresh"
+        if not get_key("DATA_GO_KR_KEY"):
+            return "no_key"
+        collect_mid()
+        return "updated"
+    except Exception:
+        return "failed"
+
+
 def forecast_issued_at() -> datetime | None:
     """저장된 단기예보의 발표 시각. 파일이 없거나 읽을 수 없으면 None."""
     if not FORECAST_HOURLY_CSV.exists():
@@ -229,10 +307,12 @@ def refresh_forecast_if_stale(max_age_hours: float = 4.0) -> dict:
     """앱을 열 때 부름. 저장된 예보가 max_age_hours 보다 오래됐고 키가 있으면 새 예보를 받음.
     실패해도 예외를 내지 않음 → 앱은 저장된 예보로 계속 동작. 오류 메시지에 인증키를 넣지 않음.
     반환 status: fresh(아직 새것) / updated(새로 받음) / no_key(키 없음) / failed(받기 실패)"""
+    mid = refresh_mid_if_stale()   # 3~5일 뒤용 중기예보 (실패해도 계속)
     issued = forecast_issued_at()
     age = None if issued is None else (datetime.now() - issued).total_seconds() / 3600
     info = {"issued_at": issued.strftime("%Y-%m-%d %H:%M") if issued else None,
             "age_hours": None if age is None else round(age, 1)}
+    info["mid"] = mid
     if age is not None and age < max_age_hours:
         return {"status": "fresh", **info}
     key = get_key("DATA_GO_KR_KEY")
@@ -245,7 +325,7 @@ def refresh_forecast_if_stale(max_age_hours: float = 4.0) -> dict:
     except Exception as e:        # 네트워크 오류 등은 메시지에 주소(키 포함)가 들어갈 수 있어 종류만 남김
         return {"status": "failed", "error": type(e).__name__, **info}
     issued = forecast_issued_at()
-    return {"status": "updated", "issued_at": issued.strftime("%Y-%m-%d %H:%M") if issued else None,
+    return {"status": "updated", "mid": mid, "issued_at": issued.strftime("%Y-%m-%d %H:%M") if issued else None,
             "age_hours": 0.0 if issued is None else round((datetime.now() - issued).total_seconds() / 3600, 1)}
 
 
@@ -257,9 +337,12 @@ def main() -> None:
     h.add_argument("--end", default=str(date.today() - timedelta(days=1)))
     h.add_argument("--debug", action="store_true")
     sub.add_parser("forecast")
+    sub.add_parser("mid")
     args = parser.parse_args()
     if args.cmd == "history":
         collect_history(date.fromisoformat(args.start), date.fromisoformat(args.end), args.debug)
+    elif args.cmd == "mid":
+        collect_mid()
     else:
         collect_forecast()
 

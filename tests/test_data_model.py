@@ -50,3 +50,27 @@ def test_forecast_error_test_only_changes_test_period():
     assert p.loc[before, cols].equals(w.loc[before, cols])
     assert not p.loc[~before, "w_ta"].equals(w.loc[~before, "w_ta"])
     assert set(p["w_sky"].dropna().unique()) <= {1.0, 3.0, 4.0}
+
+
+def test_mid_forecast_fills_days_3_to_5(tmp_path, monkeypatch):
+    """중기예보(오후 하늘·비·최고기온)가 있는 날은 달력 모델 대신 중기 모델로 예측하고, 근거를 '중기예보'로 밝힘."""
+    import pandas as pd
+    import features
+    import predict
+    import tools
+    from collect_weather import parse_mid
+    start = pd.Timestamp.today().normalize() + pd.Timedelta(days=1)
+    land = {f"wf{n}Pm": w for n, w in ((4, "맑음"), (5, "흐리고 비"))} | {"rnSt4Pm": 20, "rnSt5Pm": 80}
+    ta = {"taMax4": 17, "taMax5": 14}
+    tmfc = (start - pd.Timedelta(days=1)).strftime("%Y%m%d") + "0600"
+    mid = parse_mid(land, ta, tmfc)
+    assert list(mid["mid_sky_pm"]) == [1.0, 4.0] and list(mid["mid_rain_pm"]) == [0.0, 1.0]
+    f = tmp_path / "mid.csv"
+    mid.to_csv(f, index=False)
+    monkeypatch.setattr(features, "FORECAST_MID_CSV", f)
+    fc = predict.forecast(str(start.date()), 5, log=False)
+    used = fc.groupby(fc["date"].dt.strftime("%Y-%m-%d"))["model_used"].first()
+    for d in mid["date"]:
+        if d in used.index and used[d] != "full":
+            assert used[d] == "mid"
+    assert "중기예보" in tools._basis(["mid", "calendar"])

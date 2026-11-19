@@ -158,6 +158,8 @@ NAMES = {
     "calendar_monthly_retrain": "1차 모델(달력·경향) · 월별 재학습",
     "full_static": "날씨 모델(+기상청·허브579) · 고정 학습",
     "full_monthly_retrain": "날씨 모델(+기상청·허브579) · 월별 재학습",
+    "mid_static": "중기 모델(달력 + 오후 하늘·오후 비·최고기온) · 고정 학습",
+    "mid_monthly_retrain": "중기 모델(달력 + 오후 하늘·오후 비·최고기온) · 월별 재학습",
     "baseline_climatology": "기준선: 과거 비율(월·시각·휴일)",
     "baseline_rule": "기준선: 단순 규칙(6~9월 제외 12~14시)",
 }

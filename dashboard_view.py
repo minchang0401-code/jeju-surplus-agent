@@ -56,7 +56,8 @@ def hourly_frame(fc: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values("ts").reset_index(drop=True)
     df["label"] = [f"{t.month}/{t.day}({DOW[t.dayofweek]}) {t.hour}~{t.hour + 1}시" for t in df["ts"]]
     df["pct"] = (df["prob"] * 100).round(0)
-    df["basis"] = df["model_used"].map({"full": "기상청 예보 반영", "calendar": "날씨 미반영(참고치)"}).fillna("")
+    df["basis"] = df["model_used"].map({"full": "기상청 단기예보 반영", "mid": "기상청 중기예보 반영(거침)",
+                                         "calendar": "날씨 미반영(참고치)"}).fillna("")
     return df
 
 

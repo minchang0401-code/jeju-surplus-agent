@@ -75,6 +75,19 @@ def _past_month_rate(months: set[int]) -> dict:
     return {f"{m}월": round(float(rate.get(m, 0.0)), 3) for m in sorted(months)}
 
 
+BASIS_TEXT = {"full": "기상청 단기예보 반영", "mid": "기상청 중기예보 반영(오후 하늘·비·최고기온) — 단기예보보다 거침",
+              "calendar": "날씨 미반영(달력·최근 경향만) — 참고치"}
+
+
+def _basis(model_used) -> str:
+    """예보 근거 문구. model_used 가 여러 개면 가장 자세한 것(full > mid > calendar)."""
+    used = set(model_used) if not isinstance(model_used, str) else {model_used}
+    for k in ("full", "mid", "calendar"):
+        if k in used:
+            return BASIS_TEXT[k]
+    return BASIS_TEXT["calendar"]
+
+
 def forecast_surplus(days: int = 5, start: str | None = None) -> dict:
     """start(없으면 내일)부터 days 일. 예보는 오늘~MAX_HORIZON_DAYS 일 뒤까지만 함.
     범위 밖 날짜는 예보하지 않고 'not_forecast' 에 담아 과거 같은 달 잉여일 비율(참고)만 줌."""
@@ -95,15 +108,16 @@ def forecast_surplus(days: int = 5, start: str | None = None) -> dict:
         fc = forecast(str(inside[0]), len(inside))
         summ = summarize(fc)
         for _, r in summ.iterrows():
-            full = r["model_used"] == "full"
             out.append({
                 "date": r["date"], "weekday": r["weekday"], "level": r["level"],
                 "max_prob": r["max_prob"], "likely_hours": r["likely_hours"],
                 "likely_time_text": _hours_text(r["likely_hours"]) or "가능성 높은 시간 없음",
-                "basis": "기상청 단기예보 반영" if full else "날씨 미반영(달력·최근 경향만) — 참고치",
+                "basis": _basis(r["model_used"]),
             })
         if (fc["model_used"] == "full").any():
             sources += ["기상청 단기예보", "제주데이터허브 579 일별 기상(학습)"]
+        if (fc["model_used"] == "mid").any():
+            sources += ["기상청 중기예보(제주도)"]
     res = {"forecast": out, "sources": sources,
            "forecast_range": f"{today:%Y-%m-%d} ~ {last:%Y-%m-%d} (오늘부터 {MAX_HORIZON_DAYS}일 뒤까지)",
            "note": "확률이 20% 이상인 시간을 '가능성 있는 시간'으로 표시합니다. 예보는 확률이며 틀릴 수 있습니다."}
@@ -700,7 +714,7 @@ def plan_appliance_use(appliance: str = "", day: str = "", start_hour: int | Non
     cands = []
     for d in days:
         g = fc[fc["d"] == d].set_index("hour")
-        full = bool((g["model_used"] == "full").any())
+        basis = _basis(g["model_used"])
         for s in range(0, 24 - length + 1):
             if d == today and s < now_h:
                 continue
@@ -710,7 +724,7 @@ def plan_appliance_use(appliance: str = "", day: str = "", start_hour: int | Non
             cands.append({"date": str(d), "weekday": "월화수목금토일"[d.weekday()], "start_hour": s,
                           "end_hour": s + length, "time_text": _hour_label_text(s, length),
                           "avg_prob": round(sum(p) / len(p), 3), "level": level_of(sum(p) / len(p)),
-                          "basis": "기상청 단기예보 반영" if full else "날씨 미반영(과거 패턴) 참고치",
+                          "basis": basis,
                           "in_requested": lo <= s and s + length <= hi})
     def top3(cs):
         best = []
@@ -755,7 +769,7 @@ def plan_appliance_use(appliance: str = "", day: str = "", start_hour: int | Non
         alt = []
         for d in sorted(fc["d"].unique()):
             g = fc[fc["d"] == d].set_index("hour")
-            full = bool((g["model_used"] == "full").any())
+            basis = _basis(g["model_used"])
             for s in range(DEFAULT_EARLIEST, DEFAULT_LATEST - length + 1):
                 if d == today and s < now_h:
                     continue
@@ -764,7 +778,7 @@ def plan_appliance_use(appliance: str = "", day: str = "", start_hour: int | Non
                     alt.append({"date": str(d), "weekday": "월화수목금토일"[d.weekday()], "start_hour": s,
                                 "end_hour": s + length, "time_text": _hour_label_text(s, length),
                                 "avg_prob": round(sum(p) / len(p), 3), "level": level_of(sum(p) / len(p)),
-                                "basis": "기상청 단기예보 반영" if full else "날씨 미반영(과거 패턴) 참고치"})
+                                "basis": basis})
         out["alternatives"] = top3(alt)
     # 원한 때보다 확실히 나은 때가 있으면 따로 담아 둠 (LLM 이 빠뜨리지 않도록)
     ref = out.get("requested_window_best") or (out["best_windows"][0] if out["best_windows"] else None)

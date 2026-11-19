@@ -43,6 +43,23 @@
         "hub_day_max_temp",
         "hub_day_rain",
         "hub_day_avg_wind"
+      ],
+      "mid": [
+        "month",
+        "doy_sin",
+        "doy_cos",
+        "dow",
+        "is_weekend",
+        "is_holiday",
+        "is_offday",
+        "hour",
+        "hour_sin",
+        "hour_cos",
+        "recent_surplus_days",
+        "recent_surplus_hours_same_hour",
+        "mid_sky_pm",
+        "mid_rain_pm",
+        "mid_tmax"
       ]
     },
     "data_period": [
@@ -144,6 +161,32 @@
       "day_recall": 0.9622641509433962,
       "day_base_rate": 0.16510903426791276,
       "threshold": 0.5,
+      "days": 321,
+      "surplus_days": 53
+    },
+    "mid_static": {
+      "hour_pr_auc": 0.4288557487957732,
+      "hour_brier": 0.01284550869553398,
+      "hour_precision": 0.47368421052631576,
+      "hour_recall": 0.47368421052631576,
+      "day_pr_auc": 0.6074697938011498,
+      "day_precision": 0.6222222222222222,
+      "day_recall": 0.5283018867924528,
+      "day_base_rate": 0.16510903426791276,
+      "threshold": 0.39999999999999997,
+      "days": 321,
+      "surplus_days": 53
+    },
+    "mid_monthly_retrain": {
+      "hour_pr_auc": 0.4279564003384807,
+      "hour_brier": 0.013152453634506015,
+      "hour_precision": 0.4418604651162791,
+      "hour_recall": 0.42857142857142855,
+      "day_pr_auc": 0.598718345346859,
+      "day_precision": 0.574468085106383,
+      "day_recall": 0.5094339622641509,
+      "day_base_rate": 0.16510903426791276,
+      "threshold": 0.39999999999999997,
       "days": 321,
       "surplus_days": 53
     }

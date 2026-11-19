@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from config import (FORECAST_HOURLY_CSV, HOLIDAYS, HUB_WEATHER_DAILY_CSV,
+from config import (FORECAST_HOURLY_CSV, FORECAST_MID_CSV, HOLIDAYS, HUB_WEATHER_DAILY_CSV,
                     MAX_HORIZON_DAYS, SMP_COMPACT_TXT, SMP_HOURLY_CSV,
                     WEATHER_HOURLY_CSV)
 
@@ -172,6 +172,30 @@ def add_weather(df: pd.DataFrame, mode: str = "history") -> tuple[pd.DataFrame, 
     return out, cols
 
 
+# ---------------------------------------------------------------- 중기예보 수준의 날씨 (3~5일 뒤용)
+# 기상청 중기예보는 하루를 오전·오후로 나눠 '하늘상태·강수확률'과 '최고기온'만 줍니다.
+# 그래서 학습할 때도 관측 날씨를 같은 거친 모양(오후 하늘 3단계, 오후 비 여부, 최고기온)으로 줄여 씁니다.
+MID_FEATURES = ["mid_sky_pm", "mid_rain_pm", "mid_tmax"]
+PM_HOURS = range(13, 19)   # SMP 표기(구간 끝) 13~18시 = 낮 12시~오후 6시
+
+
+def sky_category(v: float) -> float:
+    """하늘상태 평균값 → 맑음 1 / 구름많음 3 / 흐림 4."""
+    if pd.isna(v):
+        return np.nan
+    return 1.0 if v < 2.0 else (3.0 if v < 3.5 else 4.0)
+
+
+def mid_summary(hourly: pd.DataFrame, min_pm_hours: int = 4) -> pd.DataFrame:
+    """시간별 날씨(관측 또는 단기예보) → 중기예보와 같은 모양의 하루 값. 오후 시간이 min_pm_hours 보다 적은 날은 뺌."""
+    h = hourly[hourly["hour"].isin(PM_HOURS)]
+    pm = h.groupby("date").agg(n=("hour", "nunique"), sky=("w_sky", "mean"), rain=("w_rain", "max"))
+    pm = pm[pm["n"] >= min_pm_hours]
+    out = pd.DataFrame({"mid_sky_pm": pm["sky"].map(sky_category), "mid_rain_pm": pm["rain"].astype(float),
+                        "mid_tmax": hourly.groupby("date")["w_ta"].max().reindex(pm.index)})
+    return out.reset_index()
+
+
 def build_table(labels: pd.DataFrame | None = None) -> tuple[pd.DataFrame, dict[str, list[str]]]:
     """학습 표와 '모델별 변수 목록'을 돌려줍니다.
 
@@ -186,6 +210,10 @@ def build_table(labels: pd.DataFrame | None = None) -> tuple[pd.DataFrame, dict[
     sets = {"calendar": base}
     if weather_cols:
         sets["full"] = base + weather_cols
+        w = _read(WEATHER_HOURLY_CSV)
+        if w is not None:   # 3~5일 뒤용: 중기예보 수준으로 거칠게 줄인 날씨
+            table = table.merge(mid_summary(w), on="date", how="left")
+            sets["mid"] = base + MID_FEATURES
     table.attrs["source"] = labels.attrs.get("source", "")
     return table, sets
 
@@ -197,4 +225,18 @@ def build_future_frame(start: str, days: int, history: pd.DataFrame) -> pd.DataF
     frame = add_calendar(frame)
     frame = add_recent_trend(frame, history)
     frame, _ = add_weather(frame, "forecast")
+    # 중기 수준 날씨: 단기예보가 그날 오후를 덮으면 거기서, 아니면 중기예보 파일에서
+    mid = []
+    f = _read(FORECAST_HOURLY_CSV)
+    if f is not None and {"w_sky", "w_rain", "w_ta"} <= set(f.columns):
+        mid.append(mid_summary(f))
+    m = _read(FORECAST_MID_CSV)
+    if m is not None and set(MID_FEATURES) <= set(m.columns):
+        mid.append(m[["date"] + MID_FEATURES])
+    if mid:
+        md = pd.concat(mid, ignore_index=True).drop_duplicates("date", keep="first")
+        frame = frame.merge(md, on="date", how="left")
+    else:
+        for c in MID_FEATURES:
+            frame[c] = np.nan
     return frame

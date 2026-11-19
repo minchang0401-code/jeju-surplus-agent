@@ -31,6 +31,7 @@
 | 제주데이터허브 OpenAPI | 허브 579·1225·1226·862 수집 (`collect_hub.py`) | 허브 프로젝트키 | 무료 (데이터별 하루 1,000회) |
 | 기상청 API허브 (지상관측 ASOS 시간자료) | 과거 날씨, 학습용 (`collect_weather.py history`) | API허브 인증키 | 무료 |
 | 공공데이터포털 기상청 단기예보 (15084084) | 앞으로 3일 날씨, 예보용 (`collect_weather.py forecast`, 앱 자동 갱신) | 일반 인증키 | 무료 |
+| 공공데이터포털 기상청 중기예보 (MidFcstInfoService: getMidLandFcst·getMidTa, 제주도) | 4~10일 뒤 오후 하늘·강수확률·최고기온, 3~5일 뒤 예보용 (`collect_weather.py mid`, 화면 자동 갱신) | 일반 인증키 (따로 활용신청) | 무료 |
 | 전력거래소 EPSIS (제주 시간별 SMP) | 정답(라벨) 수집 (`collect_smp.py`) | 필요 없음 | 무료 |
 | Google Gemini API | 대화·도구 선택 | Gemini API 키 (Google AI Studio) | 무료 등급 사용 (하루 500회 한도). 무료 등급 요청은 Google 제품 개선에 쓰일 수 있음 |
 | Streamlit Community Cloud | 팀 내부 시연용 웹 주소 (선택, 제출물 실행에는 필요 없음) | GitHub 계정 | 무료 |
