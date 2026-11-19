@@ -37,6 +37,11 @@ _PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
  #legend{position:absolute;left:10px;bottom:10px;z-index:1050;background:rgba(255,255,255,.92);border-radius:8px;
    padding:5px 9px;font-size:12px;color:#33413c;box-shadow:0 1px 4px rgba(0,0,0,.12);max-width:75%}
  #legend:empty{display:none}
+ /* 잉여 예보 지도: 고른 시각의 가능성을 지도 위에 크게 */
+ #badge{position:absolute;left:10px;top:10px;z-index:1060;background:rgba(255,255,255,.95);border-radius:10px;
+   padding:7px 12px;font-size:15px;font-weight:700;color:#15211d;box-shadow:0 2px 8px rgba(0,0,0,.15);display:flex;gap:8px;align-items:center}
+ #badge:empty{display:none}
+ #badge .bd{width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px #c9d2db}
  #engine{margin-left:auto}
  button{font-size:15px;padding:8px 14px;border-radius:10px;border:1px solid #2a78d6;background:#2a78d6;color:#fff;cursor:pointer}
  button.sub{background:#fff;color:#2a78d6}
@@ -73,7 +78,7 @@ _PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
 </div>
 <div id="msg"></div>
 <div id="main">
-<div id="wrap"><div id="map"></div><div id="legend"></div><div id="warn" role="alert"><span id="warnText"></span><button id="warnX" title="닫기" aria-label="안내 닫기">✕</button></div></div>
+<div id="wrap"><div id="map"></div><div id="badge"></div><div id="legend"></div><div id="warn" role="alert"><span id="warnText"></span><button id="warnX" title="닫기" aria-label="안내 닫기">✕</button></div></div>
 <div id="list"></div>
 </div>
 <script>
@@ -362,6 +367,11 @@ if (MODE === "all") {
     "곳 · 🟠 풍력발전소 · 숫자 원 = 여러 곳 모임(누르면 확대) · 허브 862·472";
 } else if (MODE === "surplus") {
   $("list").style.display = "none"; $("quick").style.display = "none";
+  if (D.badge) {
+    const dot = document.createElement("span"); dot.className = "bd"; dot.style.background = RCOLOR;
+    const t = document.createElement("span"); t.textContent = D.badge;
+    $("badge").appendChild(dot); $("badge").appendChild(t);
+  }
   $("legend").textContent = "원 크기 = 권역 재생에너지 설비(허브 123 태양광 + 풍력발전현황) · 🔵 급속 충전소(허브 862) · 🟠 풍력발전소";
 } else if (MODE === "focus") {
   $("list").style.display = "none"; $("quick").style.display = "none";
@@ -373,7 +383,8 @@ else { say("'📍 내 위치로 찾기'를 누르면 가까운 충전소와 길�
 
 
 def nearby_map_html(chargers, wind=None, home: dict | None = None, height: int = 430, kakao_key: str | None = None,
-                    mode: str = "near", regions: list | None = None, region_color: str | None = None) -> str:
+                    mode: str = "near", regions: list | None = None, region_color: str | None = None,
+                    badge: str | None = None) -> str:
     """mode: 'near'(내 주변: GPS 버튼·가까운 5곳 목록) / 'all'(제주 전체: 모든 점, 목록 없음)
     / 'focus'(답변에서 찾은 충전소만, home=찾은 동네 중심) / 'surplus'(잉여 예보 지도: 권역 원 regions + 급속 충전소).
     focus 를 뺀 모드는 iframe 높이를 꽉 채움(화면 크기에 맞춰 지도 높이가 바뀜). height 는 focus 에서만 씀.
@@ -386,7 +397,7 @@ def nearby_map_html(chargers, wind=None, home: dict | None = None, height: int =
     data = json.dumps({"p": pts, "w": wd, "home": home, "kakao_key": (kakao_key or None),
                        "mode": mode if mode in ("near", "all", "focus", "surplus") else "near",
                        # 잉여 예보 지도: [[위도, 경도, 반지름(m), 이름표, 누르면 나오는 글], ...], 색 = 섬 전체 잉여 가능성
-                       "regions": regions or [], "region_color": region_color},
+                       "regions": regions or [], "region_color": region_color, "badge": badge},
                       ensure_ascii=False).replace("</", "<\\/")
     return (_PAGE.replace("__LEAFLET_CSS__", LEAFLET_CSS).replace("__LEAFLET_JS__", LEAFLET_JS)
             .replace("__KAKAO_SDK__", KAKAO_SDK).replace("__HEIGHT__", str(int(height))).replace("__DATA__", data))

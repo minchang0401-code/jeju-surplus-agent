@@ -232,7 +232,7 @@ with left:
             _why = ("제주는 전력망이 하나라 남는 전기도 섬 전체에서 같은 시각에 생겨요. 그래서 지도의 원 색은 모두 같고, "
                     "원 크기가 권역별 재생에너지 설비(어디서 전기를 많이 만드는지)를 보여 줘요. 아래 슬라이더로 시각을 바꿀 수 있어요.")
             _html(f"<div class='mapnote' title='{_why}'><span class='dot' style='background:rgb({_c[0]},{_c[1]},{_c[2]})'></span>"
-                  f"<b>{sel} · 섬 전체 {cur['pct']:.0f}% ({cur['level']})</b> <span class='why'>ⓘ 왜 섬 전체?</span></div>")
+                  f"<b>{sel} · 제주에 전기가 남을 가능성 {cur['pct']:.0f}% ({cur['level']})</b> <span class='why'>ⓘ 왜 색이 다 같나요?</span></div>")
         elif mode == MODES[2]:
             _html("<div class='mapnote' title='위치는 이 화면(브라우저) 안에서만 쓰고 서버로 보내거나 저장하지 않아요. "
                   "허용하지 않거나 제주 밖이면 오른쪽 위 👤 내 정보의 동네로 보여 드려요.'>📍 위치는 이 화면에서만 쓰고 저장하지 않아요 "
@@ -256,7 +256,8 @@ with left:
             q = g[g["quick"]] if len(g) else g
             try:   # 다른 지도와 같은 카카오맵(→ OpenStreetMap)
                 components.html(nearby_map_html(q, w, None, height=MAP_H, kakao_key=_kakao_key(), mode="surplus",
-                                                regions=regions, region_color=f"rgb({_c[0]},{_c[1]},{_c[2]})"),
+                                                regions=regions, region_color=f"rgb({_c[0]},{_c[1]},{_c[2]})",
+                                                badge=f"{sel} · 제주에 전기가 남을 가능성 {cur['pct']:.0f}% ({cur['level']})"),
                                 height=MAP_H)
             except Exception:   # HTML 지도를 못 그리면 pydeck 지도로
                 _surplus_pydeck(reg, q, w, cur, sel, MAP_H)
@@ -294,8 +295,11 @@ with left:
                                 height=MAP_H, use_container_width=True)
 
     if with_slider:   # 시각 고르기 (잉여 예보 지도 색·그래프 기준선이 바뀜)
+        # 슬라이더 손잡이 위에 '시각 · 가능성 %(등급)'이 바로 보이게 (옮기면서 값을 확인)
+        _p = dict(zip(hourly["label"], zip(hourly["pct"], hourly["level"])))
         st.select_slider("지도·그래프 시각", options=hourly["label"].tolist(), value=sel, key="sel_time",
-                         label_visibility="collapsed")
+                         label_visibility="collapsed",
+                         format_func=lambda l: f"{l} · 전기가 남을 가능성 {_p[l][0]:.0f}% ({_p[l][1]})")
     if cur is not None:
         _src = "출처: " + ", ".join(fc["sources"]) + " · " + fc["note"]
         if wins:
