@@ -85,7 +85,7 @@ def grid_stats() -> dict:
     lab = load_labels().copy()
     lab["date"] = pd.to_datetime(lab["date"])
     x = lab.merge(dem, on=["date", "hour"]).merge(hv, on=["date", "hour"])
-    mid = x[x["hour"].between(12, 14)]          # 낮 11시~오후 2시
+    mid = x[x["hour"].between(12, 14)]          # 11시~14시
     day = mid.groupby("date").agg(s=("is_surplus", "max"), demand=("demand", "mean"), hvdc=("hvdc", "mean"))
     g = day.groupby("s")[["demand", "hvdc"]].mean()
     rev = x[x["hvdc"] < 0]
@@ -96,7 +96,7 @@ def grid_stats() -> dict:
         "midday_hvdc_import_mw": {"잉여 있는 날": round(float(g.loc[1, "hvdc"])), "다른 날": round(float(g.loc[0, "hvdc"]))},
         "reverse_hours": int(len(rev)),
         "reverse_hours_with_price_le_0": int(rev["is_surplus"].sum()),
-        "note": "수요·연계선은 낮 11시~오후 2시 평균. 연계선 값이 음수면 제주에서 육지로 전기를 보낸(역송) 시간. "
+        "note": "수요·연계선은 11시~14시 평균. 연계선 값이 음수면 제주에서 육지로 전기를 보낸(역송) 시간. "
                 "reverse_hours_with_price_le_0 = 역송한 시간 중 제주 전력시장 가격(SMP)이 0원 이하였던 시간 "
                 "(역송했지만 가격은 0원보다 높았던 시간이 더 많음 → SMP 0원 이하는 확실히 남는 시간만 잡는 신호).",
     }

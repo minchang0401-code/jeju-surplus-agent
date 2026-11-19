@@ -176,7 +176,7 @@ def add_weather(df: pd.DataFrame, mode: str = "history") -> tuple[pd.DataFrame, 
 # 기상청 중기예보는 하루를 오전·오후로 나눠 '하늘상태·강수확률'과 '최고기온'만 줍니다.
 # 그래서 학습할 때도 관측 날씨를 같은 거친 모양(오후 하늘 3단계, 오후 비 여부, 최고기온)으로 줄여 씁니다.
 MID_FEATURES = ["mid_sky_pm", "mid_rain_pm", "mid_tmax"]
-PM_HOURS = range(13, 19)   # SMP 표기(구간 끝) 13~18시 = 낮 12시~오후 6시
+PM_HOURS = range(13, 19)   # SMP 표기(구간 끝) 13~18시 = 12시~18시
 
 
 def sky_category(v: float) -> float:

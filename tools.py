@@ -55,15 +55,13 @@ def _col(df: pd.DataFrame, *keys: str) -> str | None:
 
 
 def _hours_text(hours: list[int]) -> str:
-    """SMP 표기 시각(1~24, 구간 끝)을 사람이 읽는 시간대로. 예: [12,13,14] → '오전 11시~오후 2시'"""
+    """SMP 표기 시각(1~24, 구간 끝)을 사람이 읽는 시간대로(24시간제). 예: [12,13,14] → '11시~14시'"""
     if not hours:
         return ""
     s, e = min(hours) - 1, max(hours)
 
-    def fmt(h: int) -> str:
-        h = h % 24
-        return f"오전 {h}시" if h < 12 else ("낮 12시" if h == 12 else f"오후 {h - 12}시")
-    return f"{fmt(s)}~{fmt(e)}"
+    # 오전·오후 대신 24시간제로 (헷갈리지 않게). 시작은 0~23시, 끝은 1~24시
+    return f"{s % 24}시~{e if e == 24 else e % 24}시"
 
 
 # ---------------------------------------------------------------- ① 잉여 예보
@@ -167,7 +165,7 @@ def recommend_actions(target: str = "가전", days: int = 5, day: str = "") -> d
                         f"{d['level']}({d['max_prob']:.0%}){ref} → {what}을 이 시간에")
     else:
         tips.append("앞으로 며칠은 재생에너지가 남을 가능성이 낮아요. 이번에는 시간 이동 효과가 크지 않습니다.")
-    tips.append("저녁 4~10시는 제주 계시별 요금의 최대부하 시간이라, 계시별 요금 가입 가구는 이 시간을 피하면 요금이 줄어요.")
+    tips.append("16~22시는 제주 계시별 요금의 최대부하 시간이라, 계시별 요금 가입 가구는 이 시간을 피하면 요금이 줄어요.")
     return {"target": target, "day": day, "forecast_used": fc, "tips": tips,
             "facts": [FACTS["jeju_tou_tariff"], FACTS["jeju_new_tariff_plan"]],
             "sources": fres["sources"] + [FACTS["jeju_tou_tariff"]["source"]]}
@@ -451,7 +449,7 @@ def ev_charging_habits() -> dict:
     return {"charging_start_share": share.to_dict(), "surplus_hour_share": surplus_share.to_dict(),
             "peak_charging_start_hour": peak,
             "share_of_charging_in_surplus_window": round(overlap, 3),
-            "surplus_window_text": "오전 10시~오후 3시 (잉여의 약 91%가 이 시간대)",
+            "surplus_window_text": "10시~15시 (잉여의 약 91%가 이 시간대)",
             "period": _period_text(rec),
             "evening_peak_share": round(float(sum(share.get(h, 0) for h in range(16, 22))), 3),
             "sources": ["제주데이터허브 1226 월별 전기자동차 충전 이력", "EPSIS 제주 시간별 SMP"]}
@@ -602,7 +600,7 @@ def explain_benefits() -> dict:
     """지금 바로 얻는 것 / 조건이 맞아야 얻는 것 / 앞으로 얻을 수 있는 것 / 얻지 못하는 것을 나눠서 알려 줌."""
     out = {
         "now_if_tou": FACTS["jeju_tou_tariff"]["text"]
-        + " 이 요금제 가입 가구는 저녁 4~10시(최대부하) 사용을 낮이나 밤으로 옮기면 요금이 줄어듭니다.",
+        + " 이 요금제 가입 가구는 16~22시(최대부하) 사용을 낮이나 밤으로 옮기면 요금이 줄어듭니다.",
         "not_for_standard": "일반(누진제) 주택용 요금 가구는 한 달 사용량으로 요금이 정해져서, 쓰는 시간만 옮겨서는 지금 당장 요금이 달라지지 않습니다.",
         "public": "남는 재생에너지 시간에 전기를 쓰면 발전기를 강제로 멈추는 출력제어를 줄이는 데 보탬이 됩니다.",
         "future": FACTS["jeju_new_tariff_plan"]["text"],
@@ -630,7 +628,7 @@ def how_to_act(target: str = "전기차") -> dict:
     ]
     if ev:
         steps.append("충전소는 '노형동 근처 충전소', '애월 급속 충전기'처럼 동네 이름으로 물어보면 가까운 곳을 찾아 드려요.")
-    steps.append("저녁 4~10시는 가능하면 피하세요. 제주 계시별 요금의 최대부하 시간이고, 남는 전기도 거의 없는 시간이에요.")
+    steps.append("16~22시는 가능하면 피하세요. 제주 계시별 요금의 최대부하 시간이고, 남는 전기도 거의 없는 시간이에요.")
     steps.append("집에서 쓰는 전기 요금까지 줄이고 싶다면: 일반(누진제) 요금은 쓰는 시간을 옮겨도 요금이 그대로예요. "
                  "주택용 계시별 선택요금제가 우리 집에 유리한지, 가입 조건은 무엇인지 한전(국번 없이 123, 한전:ON)에 먼저 문의하세요.")
     return {"target": target, "steps": steps,
@@ -639,7 +637,7 @@ def how_to_act(target: str = "전기차") -> dict:
 
 # ---------------------------------------------------------------- ⑩ 기기 사용 계획 (생활 언어 → 시간·전력량 계산)
 def _hour_label_text(start_hour: int, length: int) -> str:
-    """시작 시각 s, 길이 L → '낮 12시~오후 2시' (SMP 표기 시각은 구간 끝이라 s+1..s+L)."""
+    """시작 시각 s, 길이 L → '12시~14시' (SMP 표기 시각은 구간 끝이라 s+1..s+L)."""
     return _hours_text(list(range(start_hour + 1, start_hour + length + 1)))
 
 
@@ -798,8 +796,8 @@ def plan_appliance_use(appliance: str = "", day: str = "", start_hour: int | Non
             out["requested_note"] = f"원하신 시간대 안에 {length}시간 연속으로 돌릴 자리가 없어요."
     # 저녁·밤 사용 안내 (남는 전기는 거의 낮에 생김)
     if start_hour is not None and int(start_hour) >= 16:
-        out["evening_note"] = ("저녁에는 제주에 남는 전기가 거의 없어요(잉여 시간의 약 91%가 오전 10시~오후 3시). "
-                               "꼭 저녁에 써야 하면, 계시별 요금제 가입 가구는 밤 10시 이후(경부하)가 저녁 4~10시보다 요금이 싸요.")
+        out["evening_note"] = ("저녁에는 제주에 남는 전기가 거의 없어요(잉여 시간의 약 91%가 10시~15시). "
+                               "꼭 저녁에 써야 하면, 계시별 요금제 가입 가구는 22시 이후(경부하)가 16~22시보다 요금이 싸요.")
         out["sources"].append(FACTS["jeju_tou_tariff"]["source"])
     out["forecast_range"] = f"{today} ~ {last}"
     out["sources"] += ["EPSIS 제주 시간별 SMP(학습 정답)", "기상청 단기예보"]

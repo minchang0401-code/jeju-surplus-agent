@@ -113,3 +113,11 @@ def test_map_points():
     p = tools.map_points()
     assert {"lat", "lon", "color", "size"} <= set(p.columns)
     assert p["lat"].between(33.1, 34.0).all() and p["lon"].between(126.1, 127.0).all()
+
+
+def test_hours_are_shown_in_24_hour_format():
+    """시간은 오전·오후 대신 24시간제('12시~14시')로 보여 줌 (사용자가 헷갈리지 않게)."""
+    from tools import _hours_text
+    assert _hours_text([13, 14]) == "12시~14시" and _hours_text([24]) == "23시~24시"
+    for d in tools.forecast_surplus(5)["forecast"]:
+        assert "오전" not in d["likely_time_text"] and "오후" not in d["likely_time_text"]

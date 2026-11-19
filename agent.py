@@ -58,7 +58,7 @@ def _system_prompt(profile: dict | None = None) -> str:
   best_windows·alternatives 의 더 나은 시간대와 예약 기능을 권한다. evening_note 가 있으면 함께 전한다.
 - 시간대를 말할 때는 가능성 등급(높음·보통·낮음)을 꼭 함께 말한다. 등급이 '낮음'인 때를 '좋다'고만 말하지 않는다.
 - plan_appliance_use 결과에 better_option 이 있으면 반드시 그 날짜·시간대·등급을 함께 알려 준다
-  (예: "내일은 가능성이 낮아요. 일요일 낮 12시~오후 2시는 '보통'이라 더 나아요.").
+  (예: "내일은 가능성이 낮아요. 일요일 12시~14시는 '보통'이라 더 나아요.").
 - 전기차는 배터리가 몇 % 남았는지만 물을 수 있다(ask_user). 보일러는 ask_user 질문을 그대로 묻고,
   기름·가스 보일러라고 하면 fuel 을 넣어 다시 불러 support_program 을 안내한다.
 - 충전소 순서는 도구가 정한 순서 그대로 쓴다(가까운 곳 위주, 제주데이터허브 1226 기록상 낮에 붐볐던 곳은 뒤로).
@@ -72,7 +72,7 @@ def _system_prompt(profile: dict | None = None) -> str:
   예약 기능이 있는 기기는 집에 없어도 낮에 돌릴 수 있다고 알려 주고, 전기차는 '회사 근처 충전소에서 낮에'와 '집에서'를 나눠 말한다.
 - shift 가 '불가'·'낮음'인 기기는 억지로 시간을 옮기라고 하지 않고 도구의 how 를 전한다.
 - 질문에 딱 맞는 도구만 부른다. 묻지 않은 예보·충전 습관을 덧붙이지 않는다.
-- 어르신도 알아듣게 짧고 쉬운 말로, 3~6문장으로 답한다. 시간은 '낮 12시~오후 2시'처럼 말한다.
+- 어르신도 알아듣게 짧고 쉬운 말로, 3~6문장으로 답한다. 시간은 '12시~14시'처럼 24시간제로 말한다(시각 앞에 오전·오후를 붙이지 않는다).
 - 도구를 썼다면 답 끝에 출처를 한 줄로 적는다. 출처는 그 도구 결과의 sources 에 있는 이름만 그대로 옮기고, 결과에 없는 출처를 지어내지 않는다.
   도구를 안 썼으면 출처를 적지 않는다.
 - 전기차 배터리 %를 사용자가 말하지 않아 도구가 반쯤(50%)으로 가정했으면(ask_user 가 있으면), 가정했다고 밝히고 몇 % 남았는지 물어본다.
@@ -551,7 +551,7 @@ def _template(name: str, r: dict) -> str:
         lines = ["- 지금 바로: " + r["now_if_tou"],
                  "- 솔직히 말하면: " + r["not_for_standard"]]
         if "ev_evening_share" in r:
-            lines.append(f"- 전기차: 제주 공용 충전의 {r['ev_evening_share']:.0%}가 가장 비싼 저녁 4~10시에 시작돼요"
+            lines.append(f"- 전기차: 제주 공용 충전의 {r['ev_evening_share']:.0%}가 가장 비싼 16~22시에 시작돼요"
                          f"({r['ev_period']}). 이 중 일부를 낮 잉여 시간으로 옮기는 게 이 도우미의 목표예요.")
         lines.append("- 모두에게: " + r["public"])
         lines.append("- 앞으로: " + r["future"])
@@ -563,9 +563,9 @@ def _template(name: str, r: dict) -> str:
         top = max(c["wind_mwh_by_year"].items(), key=lambda kv: kv[1])
         return "\n".join([
             f"- 버려진 바람 전기: {c['wind_period']} 동안 제주 풍력발전을 {c['wind_days']}일 멈추게 했고, 버려진 전기는 모두 "
-            f"약 {c['wind_mwh_total']:,}MWh예요(가장 많았던 해 {top[0]}년 {top[1]:,}MWh). 그중 {c['wind_share_10_16']:.0%}가 오전 10시~오후 4시였어요.",
+            f"약 {c['wind_mwh_total']:,}MWh예요(가장 많았던 해 {top[0]}년 {top[1]:,}MWh). 그중 {c['wind_share_10_16']:.0%}가 10시~16시였어요.",
             f"- 태양광도 {c['solar_period']} 동안 {c['solar_days']}일 출력제어를 했고, 대부분 3~5월과 10월 한낮이었어요.",
-            f"- 2026년 1~9월에 잉여(전기 가격 0원 이하)가 생긴 날은 낮 11시~오후 2시 전력수요가 평균 {d['midday_demand_mw']['잉여 있는 날']}MW로 "
+            f"- 2026년 1~9월에 잉여(전기 가격 0원 이하)가 생긴 날은 11시~14시 전력수요가 평균 {d['midday_demand_mw']['잉여 있는 날']}MW로 "
             f"다른 날({d['midday_demand_mw']['다른 날']}MW)보다 적었고, 육지에서 받는 전기도 {d['midday_hvdc_import_mw']['잉여 있는 날']}MW로 "
             f"평소({d['midday_hvdc_import_mw']['다른 날']}MW)보다 훨씬 적었어요.",
             f"- 같은 기간 제주가 오히려 육지로 전기를 보낸(역송) 시간이 {d['reverse_hours']}시간 있었고, 주로 봄(2~5월) 낮이었어요.",
@@ -612,7 +612,7 @@ def _template(name: str, r: dict) -> str:
         return (f"- 제주 공용 충전기에서는 {r['peak_charging_start_hour']}시에 충전을 가장 많이 시작했어요"
                 f"({r['period']}).\n- 잉여가 잘 생기는 {r['surplus_window_text']}에 시작한 충전은 전체의 "
                 f"{r['share_of_charging_in_surplus_window']:.0%}예요."
-                + (f"\n- 반대로 저녁 4~10시(계시별 요금의 최대부하 시간)에 시작한 충전이 {r['evening_peak_share']:.0%}나 돼요. "
+                + (f"\n- 반대로 16~22시(계시별 요금의 최대부하 시간)에 시작한 충전이 {r['evening_peak_share']:.0%}나 돼요. "
                    "이 중 일부만 낮으로 옮겨도 남는 전기를 더 쓸 수 있고, 계시별 요금을 쓰는 집 충전이라면 요금도 줄일 수 있어요." if "evening_peak_share" in r else ""))
     if name == "explain_surplus":
         top = sorted(r["surplus_day_rate_by_month"].items(), key=lambda x: -x[1])[:3]
