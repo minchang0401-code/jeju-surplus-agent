@@ -53,3 +53,15 @@ def test_kakao_only_with_key_and_falls_back():
     assert '"kakao_key": "TEST"' in with_key and '"kakao_key": null' in no_key
     assert "dapi.kakao.com/v2/maps/sdk.js" in with_key
     assert "makeLeaflet()" in with_key                       # 카카오맵 실패 시 OpenStreetMap
+
+
+def test_whole_island_and_answer_maps_use_same_map():
+    g = tools.charger_places().head(80)
+    lat, lon = tools.PLACE_COORDS["노형"]
+    whole = nearby_map_html(g, None, None, kakao_key="TEST", mode="all")
+    focus = nearby_map_html(g.head(5), None, {"name": "노형 중심", "lat": lat, "lon": lon}, kakao_key="TEST", mode="focus")
+    assert '"mode": "all"' in whole and '"mode": "focus"' in focus
+    for h in (whole, focus):
+        assert "dapi.kakao.com/v2/maps/sdk.js" in h and "makeLeaflet()" in h   # 카카오맵 → OpenStreetMap
+        assert "eng.fit(fitPoints())" in h                                     # 점이 모두 보이게 맞춤
+    assert '"mode": "near"' in nearby_map_html(g, None, None, mode="이상한값")   # 모르는 값은 내 주변으로

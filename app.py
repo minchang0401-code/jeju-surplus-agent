@@ -90,17 +90,27 @@ def _nearby_data():
     return g, w
 
 
+def _kakao_key():
+    from config import get_key
+    return get_key("KAKAO_JS_KEY")
+
+
 def _all_map():
-    quick_only = st.toggle("급속 충전소만 보기", value=False)
-    pts = _map_points(quick_only)
-    if len(pts):
-        st.map(pts, latitude="lat", longitude="lon", color="color", size="size", zoom=9)
-        n = pts["종류"].value_counts()
-        st.caption(f"🔵 급속 충전소 {n.get('급속 충전소', 0):,}곳 · ⚪ 완속 충전소 {n.get('완속 충전소', 0):,}곳 · "
-                   f"🟠 풍력발전소 {n.get('풍력발전소', 0)}곳(원 크기 = 설비용량, 위치는 리 단위 대략값) · "
-                   "출처: 제주데이터허브 862, 제주특별자치도 풍력발전현황(허브 472)")
-    else:
+    g, w = _nearby_data()
+    pts = _map_points(False)
+    if not len(pts):
         st.info("지도에 표시할 데이터가 없어요.")
+        return
+    try:   # 카카오맵(키가 있을 때) → OpenStreetMap 순서. '내 주변' 탭과 같은 지도
+        components.html(nearby_map_html(g, w, None, height=520, kakao_key=_kakao_key(), mode="all"), height=610)
+    except Exception:   # HTML 지도를 못 그리면 Streamlit 기본 지도로
+        quick_only = st.toggle("급속 충전소만 보기", value=False)
+        sub = _map_points(quick_only)
+        st.map(sub, latitude="lat", longitude="lon", color="color", size="size", zoom=9)
+    n = pts["종류"].value_counts()
+    st.caption(f"🔵 급속 충전소 {n.get('급속 충전소', 0):,}곳 · ⚪ 완속 충전소 {n.get('완속 충전소', 0):,}곳 · "
+               f"🟠 풍력발전소 {n.get('풍력발전소', 0)}곳(원 크기 = 설비용량, 위치는 리 단위 대략값) · "
+               "출처: 제주데이터허브 862, 제주특별자치도 풍력발전현황(허브 472)")
 
 
 with st.expander("🗺️ 지도로 보기 — 내 주변 충전소와 풍력발전소", expanded=False):
@@ -113,8 +123,7 @@ with st.expander("🗺️ 지도로 보기 — 내 주변 충전소와 풍력발
             home = {"name": profile["area"], "lat": lat, "lon": lon}
         if len(g):
             try:
-                from config import get_key
-                components.html(nearby_map_html(g, w, home, kakao_key=get_key("KAKAO_JS_KEY")), height=780, scrolling=True)
+                components.html(nearby_map_html(g, w, home, kakao_key=_kakao_key()), height=780, scrolling=True)
             except Exception:   # Streamlit 버전이 바뀌어 HTML 지도를 못 그려도 목록과 길찾기는 보여 줌
                 if home:
                     from tools import find_chargers
@@ -184,13 +193,23 @@ for i, (q, res) in enumerate(st.session_state.history):
                 elif t["tool"] == "find_chargers" and r.get("chargers"):
                     cdf = pd.DataFrame(r["chargers"])
                     if {"lat", "lon"} <= set(cdf.columns):
-                        mp = cdf[["lat", "lon"]].assign(color=cdf["has_quick"].map({True: "#2a78d6", False: "#9a9a96"}),
-                                                         size=40.0)
+                        center = None
                         if r.get("center"):
-                            mp = pd.concat([mp, pd.DataFrame([{**r["center"], "color": "#eb6834", "size": 70.0}])],
-                                           ignore_index=True)
-                        st.map(mp, latitude="lat", longitude="lon", color="color", size="size", zoom=13)
-                        st.caption("🔵 급속 있음 · ⚪ 완속만 · 🟠 찾은 동네 중심")
+                            area = t["args"].get("area") if isinstance(t["args"], dict) else None
+                            center = {"name": (area or "찾은 동네") + " 중심", **r["center"]}
+                        try:   # '내 주변'과 같은 지도(카카오맵 → OpenStreetMap)에 찾은 충전소만
+                            fc = cdf.rename(columns={"has_quick": "quick"}).assign(
+                                quick_count=cdf.get("quick_count", 0))
+                            components.html(nearby_map_html(fc, None, center, height=340, kakao_key=_kakao_key(),
+                                                            mode="focus"), height=410)
+                        except Exception:
+                            mp = cdf[["lat", "lon"]].assign(
+                                color=cdf["has_quick"].map({True: "#2a78d6", False: "#9a9a96"}), size=40.0)
+                            if r.get("center"):
+                                mp = pd.concat([mp, pd.DataFrame([{**r["center"], "color": "#eb6834", "size": 70.0}])],
+                                               ignore_index=True)
+                            st.map(mp, latitude="lat", longitude="lon", color="color", size="size", zoom=13)
+                            st.caption("🔵 급속 있음 · ⚪ 완속만 · 🟠 찾은 동네 중심")
                     show = cdf.drop(columns=[c for c in ("lat", "lon", "has_quick") if c in cdf.columns]).rename(
                         columns={"name": "충전소", "quick_count": "급속", "slow_count": "완속", "distance_km": "거리(km)",
                                  "map_link": "위치", "route_link": "길찾기"})

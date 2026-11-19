@@ -1,4 +1,4 @@
-"""내 주변 충전소 지도 — 화면(app.py)의 '📍 내 주변' 탭.
+"""충전소 지도 — 화면(app.py)의 '📍 내 주변'·'🗺️ 제주 전체' 탭과 답변의 '근거 보기' 지도가 모두 이 지도를 씀.
 
 세 가지가 함께 동작하도록 만들었습니다.
 1) GPS: '📍 내 위치로 찾기'를 누르면 브라우저가 위치 허용을 묻고, 허용하면 내 위치와 가까운 충전소 5곳을 보여 줌
@@ -37,7 +37,7 @@ _PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
  .me{width:16px;height:16px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 1px #888}
  .pop{padding:8px 10px;font-size:13px;line-height:1.5;white-space:nowrap}
 </style></head><body>
-<div class="bar">
+<div class="bar" id="bar">
  <button id="gps">📍 내 위치로 찾기</button>
  <button class="sub" id="quick">급속만 보기: 끔</button>
  <a target="_blank" rel="noopener" href="https://map.kakao.com/link/search/%EC%A0%84%EA%B8%B0%EC%B0%A8%EC%B6%A9%EC%A0%84%EC%86%8C">카카오맵에서 내 주변 충전소 검색 ↗</a>
@@ -48,7 +48,7 @@ _PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
 <div id="list"></div>
 <script>
 const D = __DATA__;
-const P = D.p, W = D.w, HOME = D.home, KKEY = D.kakao_key;
+const P = D.p, W = D.w, HOME = D.home, KKEY = D.kakao_key, MODE = D.mode || "near";
 let quickOnly = false, eng = null, last = null;
 const $ = (id) => document.getElementById(id);
 function say(t) { $("msg").textContent = t; }
@@ -97,8 +97,14 @@ function makeKakao() {
           const info = new K.InfoWindow({removable: true});
           const meOverlays = [];
           for (const w of W) {
-            new K.Circle({center: new K.LatLng(w[0], w[1]), radius: 250 + w[2] * 12, strokeWeight: 1, strokeColor: "#ffffff",
-              fillColor: "#eb6834", fillOpacity: 0.75}).setMap(map);
+            const wc = new K.Circle({center: new K.LatLng(w[0], w[1]), radius: 250 + w[2] * 12, strokeWeight: 1, strokeColor: "#ffffff",
+              fillColor: "#eb6834", fillOpacity: 0.75});
+            wc.setMap(map);
+            K.event.addListener(wc, "click", function () {
+              const box = document.createElement("div"); box.className = "pop";
+              box.textContent = "풍력발전소 " + w[2] + "MW (위치는 리 단위 대략값)";
+              info.setContent(box); info.setPosition(new K.LatLng(w[0], w[1])); info.open(map);
+            });
           }
           const api = {
             name: "카카오맵",
@@ -119,6 +125,12 @@ function makeKakao() {
               el.style.background = isGps ? "#1251a8" : "#eb6834";
               meOverlays.push(new K.CustomOverlay({position: c, content: el, map: map, zIndex: 5}));
               map.setLevel(4); map.setCenter(c);
+            },
+            fit: function (pts) {
+              if (!pts.length) return;
+              const b = new K.LatLngBounds();
+              for (const q of pts) b.extend(new K.LatLng(q[0], q[1]));
+              map.setBounds(b);
             }
           };
           watchResize(function () { map.relayout(); });
@@ -133,7 +145,7 @@ function makeKakao() {
 function makeLeaflet() {
   return (window.L ? Promise.resolve() : loadScript("__LEAFLET_JS__")).then(function () {
     if (!window.L) throw new Error("no leaflet");
-    const map = L.map("map", {scrollWheelZoom: false}).setView([33.38, 126.55], 10);
+    const map = L.map("map", {scrollWheelZoom: false, preferCanvas: true}).setView([33.38, 126.55], 10);
     let fails = 0, switched = false;
     const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {attribution: "© OpenStreetMap contributors", maxZoom: 19});
     osm.on("tileerror", function () {
@@ -165,6 +177,9 @@ function makeLeaflet() {
         L.circleMarker([lat, lon], {radius: 9, weight: 3, color: "#fff", fillColor: isGps ? "#1251a8" : "#eb6834",
           fillOpacity: 1}).bindTooltip(label).addTo(meLayer);
         map.setView([lat, lon], 14);
+      },
+      fit: function (pts) {
+        if (pts.length) map.fitBounds(L.latLngBounds(pts.map(q => [q[0], q[1]])), {padding: [20, 20], maxZoom: 15});
       }
     };
   });
@@ -228,10 +243,17 @@ $("quick").onclick = function () {
 };
 
 // ---------- 시작: 카카오맵 → (실패) OpenStreetMap → (실패) 목록만
+function fitPoints() {
+  const pts = shown().map(p => [p[0], p[1]]);
+  if (MODE === "all") for (const w of W) pts.push([w[0], w[1]]);
+  if (MODE === "focus" && HOME) pts.push([HOME.lat, HOME.lon]);
+  return pts;
+}
 function ready(api) {
   eng = api; eng.draw();
   $("engine").textContent = "지도: " + api.name;
   if (last) eng.me.apply(null, last);
+  if (MODE !== "near") eng.fit(fitPoints());   // 제주 전체·답변 지도는 점이 모두 보이게 맞춤
 }
 function noMap() {
   $("map").style.display = "none";
@@ -245,19 +267,32 @@ const startMap = KKEY
     })
   : makeLeaflet();
 startMap.then(ready).catch(noMap);
-if (HOME) { showAt(HOME.lat, HOME.lon, "내 동네(" + HOME.name + ")", 0, false); }
+// 모드: near = 내 주변(GPS·목록) / all = 제주 전체(GPS·목록 없음) / focus = 답변에서 찾은 충전소만
+if (MODE !== "near") $("gps").style.display = "none";
+if (MODE === "all") {
+  $("list").style.display = "none";
+  say("점을 누르면 이름과 길찾기가 나와요. 숫자가 적힌 원은 충전소 여러 곳이 모인 곳이에요(누르면 확대).");
+} else if (MODE === "focus") {
+  $("list").style.display = "none"; $("quick").style.display = "none";
+  say("🟠 찾은 동네 중심 · 🔵 급속 있음 · ⚪ 완속만 — 점을 누르면 이름과 길찾기가 나와요.");
+  if (HOME) showAt(HOME.lat, HOME.lon, HOME.name, 0, false);
+} else if (HOME) { showAt(HOME.lat, HOME.lon, "내 동네(" + HOME.name + ")", 0, false); }
 else { say("'📍 내 위치로 찾기'를 누르면 가까운 충전소와 길찾기를 보여 드려요."); }
 </script></body></html>"""
 
 
-def nearby_map_html(chargers, wind=None, home: dict | None = None, height: int = 430, kakao_key: str | None = None) -> str:
-    """chargers: name·lat·lon·quick·quick_count 열이 있는 표. wind: lat·lon·mw 표(선택).
+def nearby_map_html(chargers, wind=None, home: dict | None = None, height: int = 430, kakao_key: str | None = None,
+                    mode: str = "near") -> str:
+    """mode: 'near'(내 주변: GPS 버튼·가까운 5곳 목록) / 'all'(제주 전체: 모든 점, 목록 없음)
+    / 'focus'(답변에서 찾은 충전소만, home=찾은 동네 중심).
+    chargers: name·lat·lon·quick·quick_count 열이 있는 표. wind: lat·lon·mw 표(선택).
     home: {'name': '노형', 'lat': .., 'lon': ..} — 저장한 내 동네 (없으면 None).
     kakao_key: 카카오 JavaScript 키 (없으면 OpenStreetMap). 브라우저용 공개 키이며 등록한 앱 주소에서만 동작."""
     pts = [[round(float(r.lat), 5), round(float(r.lon), 5), int(bool(r.quick)), str(r.name).strip(), int(r.quick_count)]
            for r in chargers.itertuples()]
     wd = [] if wind is None else [[round(float(r.lat), 5), round(float(r.lon), 5), float(r.mw)] for r in wind.itertuples()]
-    data = json.dumps({"p": pts, "w": wd, "home": home, "kakao_key": (kakao_key or None)},
+    data = json.dumps({"p": pts, "w": wd, "home": home, "kakao_key": (kakao_key or None),
+                       "mode": mode if mode in ("near", "all", "focus") else "near"},
                       ensure_ascii=False).replace("</", "<\\/")
     return (_PAGE.replace("__LEAFLET_CSS__", LEAFLET_CSS).replace("__LEAFLET_JS__", LEAFLET_JS)
             .replace("__KAKAO_SDK__", KAKAO_SDK).replace("__HEIGHT__", str(int(height))).replace("__DATA__", data))

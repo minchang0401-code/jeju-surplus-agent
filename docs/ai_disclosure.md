@@ -62,7 +62,7 @@
 | Streamlit | 웹 화면 | Apache-2.0 |
 | matplotlib | 그림 그리기 (`experiments/`, 선택) | Matplotlib License (PSF 기반) |
 | pytest | 자동 시험 (`tests/`, 선택) | MIT |
-| 지도 배경 (Streamlit `st.map`) | 화면 지도 | 배경 지도 © OpenStreetMap contributors, © CARTO (화면에 표시됨) |
+| 지도 배경 (Streamlit `st.map`) | 화면 지도가 그려지지 않을 때의 예비 지도 | 배경 지도 © OpenStreetMap contributors, © CARTO (화면에 표시됨) |
 | 카카오맵 링크 | 충전소 위치 열기·현재 위치에서 길찾기 (링크만 만듦, API 호출 없음) | 카카오맵 이용약관에 따름 |
 | 카카오맵 JavaScript API (선택) | 내 주변 충전소 지도 배경 (`KAKAO_JS_KEY`가 있을 때만, 사용자 브라우저에서 불러옴) | 카카오 개발자 이용약관 · 키는 Secrets/.env에만 두고 제출물에 넣지 않음 |
 | Leaflet 1.9.4 (unpkg CDN) | 내 주변 충전소 지도 (사용자 브라우저에서 불러옴) | BSD-2-Clause |
@@ -78,7 +78,7 @@
 | 가져온 것 | 원래 위치 | 이 프로젝트에서 |
 |---|---|---|
 | 한국전력거래소 공개 파일(출력제어·수요·연계선·플러스 DR), 풍력발전소 대략 좌표 | 팀원 B `JEJU_SURPLUS_FORECAST/data/raw`, `data/reference/wind_farms.csv` | `data/grid_raw/`, `grid.py`, 화면 지도 |
-| 지도 표시 아이디어 | 팀원 B `dashboard/index.html` | `app.py` '지도로 보기' (Streamlit `st.map`, 코드는 새로 작성) |
+| 지도 표시 아이디어 | 팀원 B `dashboard/index.html` | `app.py` '지도로 보기'·`nearby_map.py` (카카오맵 → OpenStreetMap, 코드는 새로 작성) |
 | 시간 제약 안에서 계획하기 | 팀원 C `TIMEFLOW_JEJU_MVP/timeflow/optimizer.py` | `tools.plan_appliance_use`의 출근·외출 일정 반영 (코드는 새로 작성) |
 | 평가기준 대응표 형식 | 팀원 C `docs/EVALUATION_MAPPING.md` | `docs/evaluation_mapping.md` |
 | pytest 자동 시험 방식 | 팀원 C `tests/`, `pytest.ini` | `tests/` (시험 내용은 새로 작성) |
