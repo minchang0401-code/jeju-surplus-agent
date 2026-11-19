@@ -1,12 +1,18 @@
 """시험 시나리오 5개를 실행해 결과를 reports/scenario_results.md 로 남깁니다 (결과 설명자료용).
 
     python run_scenarios.py
+
+.env 에 LLM 키가 있어도 항상 비상 모드(규칙 기반)로 답하게 해서 시험합니다.
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime
 
-from agent import ask
+# 비상 모드(규칙 기반) 시험이라 .env 에 LLM 키가 있어도 LLM 을 끄고 돌림 (LLM 시험은 run_llm_eval.py)
+os.environ["LLM_PROVIDER"] = "none"
+
+from agent import ask  # noqa: E402  (LLM_PROVIDER 를 정한 뒤에 불러야 함)
 from config import REPORTS
 
 SCENARIOS = [
