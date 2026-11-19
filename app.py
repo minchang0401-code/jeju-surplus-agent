@@ -184,6 +184,9 @@ for i, (q, res) in enumerate(st.session_state.history):
                     show = cdf.drop(columns=[c for c in ("lat", "lon", "has_quick") if c in cdf.columns]).rename(
                         columns={"name": "충전소", "quick_count": "급속", "slow_count": "완속", "distance_km": "거리(km)",
                                  "map_link": "위치", "route_link": "길찾기"})
+                    # 좁은 화면에서도 거리·길찾기가 먼저 보이도록 순서를 정함
+                    order = [c for c in ("충전소", "거리(km)", "길찾기", "급속", "완속", "위치") if c in show.columns]
+                    show = show[order + [c for c in show.columns if c not in order]]
                     st.dataframe(show, hide_index=True, column_config={
                         "위치": st.column_config.LinkColumn("위치", display_text="카카오맵 열기"),
                         "길찾기": st.column_config.LinkColumn("길찾기", display_text="내 위치에서 길찾기")})
