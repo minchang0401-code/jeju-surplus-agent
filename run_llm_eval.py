@@ -134,6 +134,11 @@ def main() -> None:
         sys.exit(f"LLM이 연결되지 않았습니다: {st['text']}\n.env 의 LLM_PROVIDER, LLM_API_KEY 를 확인하세요.")
     print(st["text"])
     cases = _cases()
+    # --only T10,A02 : 그 문항만 다시 돌려 기존 결과(llm_eval.json)에 덮어씀. 다시 돌린 문항은 표에 '다시 실행'으로 밝힘
+    only = []
+    if "--only" in sys.argv:
+        only = sys.argv[sys.argv.index("--only") + 1].split(",")
+        cases = [c for c in cases if c["id"] in only]
     rows = []
     for i, case in enumerate(cases, 1):
         history: list[tuple[str, str]] = []
@@ -152,20 +157,30 @@ def main() -> None:
         rows.append({**case, **sc, "question": case["turns"][-1], "answer": res["answer"]})
         print(f"[{i}/{len(cases)}] {case['id']} {'통과' if sc['passed'] else '확인 필요'} · {case['turns'][-1]} → {sc['used']}")
 
+    rerun_note, first_run = "", None
+    if only:   # 기존 결과에 다시 돌린 문항만 바꿔 끼움 (순서 유지)
+        old = json.loads((REPORTS / "llm_eval.json").read_text(encoding="utf-8"))
+        new = {r["id"]: {**r, "rerun": True} for r in rows}
+        rows = [new.get(r["id"], r) for r in old["rows"]]
+        first_run = old.get("first_run_at") or old.get("run_at", "")
+        rerun_note = (f"- 다시 실행: {', '.join(only)} — 첫 실행({first_run})에서 확인 필요로 나와 "
+                      f"지침을 고친 뒤 이 문항만 다시 실행했습니다 ({datetime.now():%Y-%m-%d %H:%M}).")
     n_pass = sum(r["passed"] for r in rows)
     n_llm = sum(r["mode"] == "llm" for r in rows)
     now = datetime.now()
     lines = [f"# AI(LLM) 모드 시험 결과 ({now:%Y-%m-%d %H:%M})", "",
              f"- 모델: {st['text'].split(': ', 1)[-1]}",
              f"- **통과 {n_pass}/{len(rows)}** (LLM이 직접 답한 질문 {n_llm}/{len(rows)})",
-             "- 채점: 기대 도구를 불렀는지 + 정직성(꼭 들어갈 말·지어내기 금지) + LLM이 실제로 답했는지", "",
+             "- 채점: 기대 도구를 불렀는지 + 정직성(꼭 들어갈 말·지어내기 금지) + LLM이 실제로 답했는지"]
+    lines += ([rerun_note, ""] if rerun_note else [""])
+    lines += [
              "| ID | 분류 | 질문 (이어지는 대화는 마지막 질문) | 부른 도구 | 채점 | 결과 |", "|---|---|---|---|---|---|"]
     for r in rows:
         chk = ", ".join(f"{k} {'O' if v else 'X'}" for k, v in r["checks"].items())
         if r["mode"] != "llm":
             chk += f", 비상 모드({r['llm_error'] or 'LLM 미응답'})"
         lines.append(f"| {r['id']} | {r['group']} | {r['question']} | {', '.join(r['used'])} | {chk} | "
-                     f"{'통과' if r['passed'] else '확인 필요'} |")
+                     f"{'통과' if r['passed'] else '확인 필요'}{' (다시 실행)' if r.get('rerun') else ''} |")
     lines += ["", "## 답변 전문", ""]
     for r in rows:
         lines += [f"### {r['id']} · {r['question']}"]
@@ -176,7 +191,8 @@ def main() -> None:
         lines += ["", "```", r["answer"], "```", ""]
     (REPORTS / "llm_eval.md").write_text("\n".join(lines), encoding="utf-8")
     (REPORTS / "llm_eval.json").write_text(
-        json.dumps({"run_at": now.isoformat(timespec="minutes"), "model": st["text"], "passed": n_pass,
+        json.dumps({"run_at": now.isoformat(timespec="minutes"), "first_run_at": first_run or now.isoformat(timespec="minutes"),
+                    "model": st["text"], "passed": n_pass,
                     "total": len(rows), "rows": rows}, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     print(f"\n통과 {n_pass}/{len(rows)} → {REPORTS / 'llm_eval.md'}")
 
